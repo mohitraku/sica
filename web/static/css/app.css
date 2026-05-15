@@ -1,0 +1,12 @@
+:root {
+  --bg: #1a1a2e;
+  --fg: #e0e0e0;
+  --accent: #7c9acc;
+  --dim: #555;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  background: var(--bg); color: var(--fg);
+  min-height: 100vh;
+}
