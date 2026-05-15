@@ -4,10 +4,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/mojitrk/sica/internal/habits"
+	"github.com/mojitrk/sica/internal/store/sqlite"
+	"github.com/mojitrk/sica/internal/tasks"
 )
 
+func testDeps(t *testing.T) Deps {
+	t.Helper()
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return Deps{
+		Store:       db,
+		HabitsStore: habits.NewStore(db),
+		TasksStore:  tasks.NewStore(db),
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
-	handler := New()
+	handler := New(testDeps(t))
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -18,7 +36,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestAPIPlaceholders(t *testing.T) {
-	handler := New()
+	handler := New(testDeps(t))
 	endpoints := []string{
 		"/api/habits/",
 		"/api/tasks/",
@@ -43,7 +61,7 @@ func TestAPIPlaceholders(t *testing.T) {
 }
 
 func TestWebUI(t *testing.T) {
-	handler := New()
+	handler := New(testDeps(t))
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

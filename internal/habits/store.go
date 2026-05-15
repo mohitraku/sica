@@ -1,0 +1,242 @@
+package habits
+
+import (
+	"database/sql"
+	"time"
+
+	"github.com/mojitrk/sica/internal/core"
+	"github.com/mojitrk/sica/internal/store/sqlite"
+)
+
+type Store struct {
+	db *sql.DB
+}
+
+func NewStore(s *sqlite.Store) *Store {
+	return &Store{db: s.DB}
+}
+
+func (s *Store) Create(h *core.Habit) error {
+	h.CreatedAt = time.Now()
+	result, err := s.db.Exec(
+		`INSERT INTO habits (name, description, frequency, color, icon) VALUES (?, ?, ?, ?, ?)`,
+		h.Name, h.Description, h.Frequency, h.Color, h.Icon,
+	)
+	if err != nil {
+		return err
+	}
+	id, _ := result.LastInsertId()
+	h.ID = id
+	return nil
+}
+
+func (s *Store) Get(id int64) (*core.Habit, error) {
+	h := &core.Habit{}
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, name, description, frequency, color, icon, created_at FROM habits WHERE id=? AND archived_at IS NULL`,
+		id,
+	).Scan(&h.ID, &h.Name, &h.Description, &h.Frequency, &h.Color, &h.Icon, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	h.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	return h, err
+}
+
+func (s *Store) List(includeArchived bool) ([]core.Habit, error) {
+	query := `SELECT id, name, description, frequency, color, icon, created_at FROM habits`
+	if !includeArchived {
+		query += ` WHERE archived_at IS NULL`
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var habits []core.Habit
+	for rows.Next() {
+		var h core.Habit
+		var createdAt string
+		if err := rows.Scan(&h.ID, &h.Name, &h.Description, &h.Frequency, &h.Color, &h.Icon, &createdAt); err != nil {
+			return nil, err
+		}
+		h.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		habits = append(habits, h)
+	}
+	return habits, rows.Err()
+}
+
+func (s *Store) Update(h *core.Habit) error {
+	_, err := s.db.Exec(
+		`UPDATE habits SET name=?, description=?, frequency=?, color=?, icon=? WHERE id=?`,
+		h.Name, h.Description, h.Frequency, h.Color, h.Icon, h.ID,
+	)
+	return err
+}
+
+func (s *Store) Archive(id int64) error {
+	_, err := s.db.Exec(`UPDATE habits SET archived_at=datetime('now') WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) Delete(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM habits WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) AddEntry(habitID int64, date string, value int, notes string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO habit_entries (habit_id, date, value, notes) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?, notes=?`,
+		habitID, date, value, notes, value, notes,
+	)
+	return err
+}
+
+func (s *Store) RemoveEntry(habitID int64, date string) error {
+	_, err := s.db.Exec(`DELETE FROM habit_entries WHERE habit_id=? AND date=?`, habitID, date)
+	return err
+}
+
+func (s *Store) EntriesForDate(date string) ([]core.HabitEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT id, habit_id, date, value, notes FROM habit_entries WHERE date=?`,
+		date,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []core.HabitEntry
+	for rows.Next() {
+		var e core.HabitEntry
+		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.Notes); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *Store) EntriesForHabit(habitID int64, limit int) ([]core.HabitEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT id, habit_id, date, value, notes FROM habit_entries WHERE habit_id=? ORDER BY date DESC LIMIT ?`,
+		habitID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []core.HabitEntry
+	for rows.Next() {
+		var e core.HabitEntry
+		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.Notes); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+type Stats struct {
+	Habit         core.Habit
+	CurrentStreak int
+	LongestStreak int
+	TotalEntries  int
+	TodayDone     bool
+}
+
+func (s *Store) Stats(habitID int64) (*Stats, error) {
+	h, err := s.Get(habitID)
+	if err != nil || h == nil {
+		return nil, err
+	}
+
+	stats := &Stats{Habit: *h}
+
+	rows, err := s.db.Query(
+		`SELECT date FROM habit_entries WHERE habit_id=? ORDER BY date DESC`,
+		habitID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dates []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		dates = append(dates, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	stats.TotalEntries = len(dates)
+	if stats.TotalEntries == 0 {
+		return stats, nil
+	}
+
+	today := time.Now().Format("2006-01-02")
+
+	dateSet := make(map[string]bool, len(dates))
+	for _, d := range dates {
+		dateSet[d] = true
+	}
+	stats.TodayDone = dateSet[today]
+
+	current := 0
+	cursor := today
+	for {
+		if dateSet[cursor] {
+			current++
+		} else if cursor != today {
+			break
+		}
+		t, _ := time.Parse("2006-01-02", cursor)
+		cursor = t.AddDate(0, 0, -1).Format("2006-01-02")
+		if cursor < dates[len(dates)-1] {
+			break
+		}
+	}
+	stats.CurrentStreak = current
+
+	longest := 0
+	run := 0
+	sortDate := today
+	for i := 0; i < 365; i++ {
+		td, _ := time.Parse("2006-01-02", sortDate)
+		sortDate = td.AddDate(0, 0, -1).Format("2006-01-02")
+	}
+	stats.LongestStreak = longest
+
+	sortDateAsc := make([]string, len(dates))
+	for i, d := range dates {
+		sortDateAsc[len(dates)-1-i] = d
+	}
+	for _, d := range sortDateAsc {
+		if dateSet[d] {
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	stats.LongestStreak = longest
+	if current > longest {
+		stats.LongestStreak = current
+	}
+
+	return stats, nil
+}
