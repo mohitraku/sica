@@ -15,9 +15,9 @@ import (
 )
 
 type Deps struct {
-	Store        *sqlite.Store
-	HabitsStore  *habits.Store
-	TasksStore   *tasks.Store
+	Store       *sqlite.Store
+	HabitsStore *habits.Store
+	TasksStore  *tasks.Store
 }
 
 func staticFS() (http.FileSystem, error) {
@@ -54,8 +54,7 @@ func New(deps Deps) http.Handler {
 				r.Put("/", hhabits.Update)
 				r.Delete("/", hhabits.Delete)
 				r.Post("/entry", hhabits.SetEntry)
-					r.Post("/increment", hhabits.Increment)
-					r.Post("/decrement", hhabits.Decrement)
+				r.Post("/increment", hhabits.Increment)
 				r.Delete("/entry", hhabits.RemoveEntry)
 				r.Get("/stats", hhabits.Stats)
 			})

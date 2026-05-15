@@ -6,15 +6,14 @@ import (
 	"time"
 
 	"github.com/mojitrk/sica/internal/core"
-	"github.com/mojitrk/sica/internal/store/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
 }
 
-func NewStore(s *sqlite.Store) *Store {
-	return &Store{db: s.DB}
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 func (s *Store) Create(h *core.Habit) error {
@@ -136,46 +135,6 @@ func (s *Store) RemoveEntry(habitID int64, date string) error {
 	return err
 }
 
-func (s *Store) EntriesForDate(date string) ([]core.HabitEntry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, habit_id, date, value, notes FROM habit_entries WHERE date=?`, date,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var entries []core.HabitEntry
-	for rows.Next() {
-		var e core.HabitEntry
-		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.Notes); err != nil {
-			return nil, err
-		}
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}
-
-func (s *Store) EntriesForHabit(habitID int64, limit int) ([]core.HabitEntry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, habit_id, date, value, notes FROM habit_entries WHERE habit_id=? ORDER BY date DESC LIMIT ?`,
-		habitID, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var entries []core.HabitEntry
-	for rows.Next() {
-		var e core.HabitEntry
-		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.Notes); err != nil {
-			return nil, err
-		}
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}
 
 type Stats struct {
 	Habit         core.Habit

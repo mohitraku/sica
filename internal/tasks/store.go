@@ -5,15 +5,14 @@ import (
 	"time"
 
 	"github.com/mojitrk/sica/internal/core"
-	sqlstore "github.com/mojitrk/sica/internal/store/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
 }
 
-func NewStore(s *sqlstore.Store) *Store {
-	return &Store{db: s.DB}
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 func (s *Store) CreateProject(p *core.Project) error {

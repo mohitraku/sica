@@ -108,27 +108,6 @@ func (h *HabitsHandler) Increment(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]interface{}{"date": req.Date, "value": newVal})
 }
 
-func (h *HabitsHandler) Decrement(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	var req struct {
-		Date  string `json:"date"`
-		Delta int    `json:"delta"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
-		return
-	}
-	if req.Delta <= 0 {
-		req.Delta = 1
-	}
-	newVal, err := h.Store.IncrementEntry(id, req.Date, -req.Delta)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	respond(w, http.StatusOK, map[string]interface{}{"date": req.Date, "value": newVal})
-}
-
 func (h *HabitsHandler) RemoveEntry(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var entry struct {

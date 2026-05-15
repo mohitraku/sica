@@ -162,8 +162,9 @@ func migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(doc_id);
 	`)
 
-	// Migration: add target_value for existing databases.
-	db.Exec(`ALTER TABLE habits ADD COLUMN target_value INTEGER NOT NULL DEFAULT 1`)
+	// Migration: add target_value for databases created before the column existed.
+	// "duplicate column" error on fresh databases is expected and ignored.
+	_, _ = db.Exec(`ALTER TABLE habits ADD COLUMN target_value INTEGER NOT NULL DEFAULT 1`)
 
 	return err
 }

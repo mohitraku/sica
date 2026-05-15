@@ -14,7 +14,7 @@ func setup(t *testing.T) *Store {
 		t.Fatalf("open test db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewStore(db)
+	return NewStore(db.DB)
 }
 
 func TestCreateAndListTasks(t *testing.T) {

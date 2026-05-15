@@ -10,54 +10,54 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Knowledge KnowledgeConfig `mapstructure:"knowledge"`
-	AI        AIConfig        `mapstructure:"ai"`
-	Calendar  CalendarConfig  `mapstructure:"calendar"`
+	Server    serverConfig    `mapstructure:"server"`
+	Database  databaseConfig  `mapstructure:"database"`
+	Knowledge knowledgeConfig `mapstructure:"knowledge"`
+	AI        aiConfig        `mapstructure:"ai"`
+	Calendar  calendarConfig  `mapstructure:"calendar"`
 }
 
-type ServerConfig struct {
+type serverConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"port"`
 }
 
-type DatabaseConfig struct {
+type databaseConfig struct {
 	Path string `mapstructure:"path"`
 }
 
-type KnowledgeConfig struct {
+type knowledgeConfig struct {
 	Path string `mapstructure:"path"`
 }
 
-type AIConfig struct {
+type aiConfig struct {
 	DefaultProvider string       `mapstructure:"default_provider"`
-	Ollama          OllamaConfig `mapstructure:"ollama"`
-	Claude          ClaudeConfig `mapstructure:"claude"`
-	OpenAI          OpenAIConfig `mapstructure:"openai"`
+	Ollama          ollamaConfig `mapstructure:"ollama"`
+	Claude          claudeConfig `mapstructure:"claude"`
+	OpenAI          openaiConfig `mapstructure:"openai"`
 }
 
-type OllamaConfig struct {
+type ollamaConfig struct {
 	Host           string `mapstructure:"host"`
 	Model          string `mapstructure:"model"`
 	EmbeddingModel string `mapstructure:"embedding_model"`
 }
 
-type ClaudeConfig struct {
+type claudeConfig struct {
 	APIKey string `mapstructure:"api_key"`
 	Model  string `mapstructure:"model"`
 }
 
-type OpenAIConfig struct {
+type openaiConfig struct {
 	APIKey string `mapstructure:"api_key"`
 	Model  string `mapstructure:"model"`
 }
 
-type CalendarConfig struct {
-	Outlook OutlookConfig `mapstructure:"outlook"`
+type calendarConfig struct {
+	Outlook outlookConfig `mapstructure:"outlook"`
 }
 
-type OutlookConfig struct {
+type outlookConfig struct {
 	ClientID    string `mapstructure:"client_id"`
 	RedirectURL string `mapstructure:"redirect_url"`
 }
@@ -70,35 +70,35 @@ func SicaDir() string {
 	return filepath.Join(home, ".sica")
 }
 
-func Default() *Config {
+func defaultConfig() *Config {
 	sicaDir := SicaDir()
 	return &Config{
-		Server: ServerConfig{
+		Server: serverConfig{
 			Host: "127.0.0.1",
 			Port: 8420,
 		},
-		Database: DatabaseConfig{
+		Database: databaseConfig{
 			Path: filepath.Join(sicaDir, "data.db"),
 		},
-		Knowledge: KnowledgeConfig{
+		Knowledge: knowledgeConfig{
 			Path: filepath.Join(sicaDir, "knowledge"),
 		},
-		AI: AIConfig{
+		AI: aiConfig{
 			DefaultProvider: "ollama",
-			Ollama: OllamaConfig{
+			Ollama: ollamaConfig{
 				Host:           "http://localhost:11434",
 				Model:          "qwen2.5:14b",
 				EmbeddingModel: "nomic-embed-text",
 			},
-			Claude: ClaudeConfig{
+			Claude: claudeConfig{
 				Model: "claude-sonnet-4-6",
 			},
-			OpenAI: OpenAIConfig{
+			OpenAI: openaiConfig{
 				Model: "gpt-4o",
 			},
 		},
-		Calendar: CalendarConfig{
-			Outlook: OutlookConfig{
+		Calendar: calendarConfig{
+			Outlook: outlookConfig{
 				RedirectURL: "http://localhost:8420/auth/outlook/callback",
 			},
 		},
@@ -111,8 +111,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("create sica dir: %w", err)
 	}
 
-	cfg := Default()
-
+	cfg := defaultConfig()
 	configPath := filepath.Join(sicaDir, "config.yaml")
 
 	v := viper.New()

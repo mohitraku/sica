@@ -42,8 +42,8 @@ func main() {
 
 	deps := server.Deps{
 		Store:       store,
-		HabitsStore: habits.NewStore(store),
-		TasksStore:  tasks.NewStore(store),
+		HabitsStore: habits.NewStore(store.DB),
+		TasksStore:  tasks.NewStore(store.DB),
 	}
 
 	handler := server.New(deps)

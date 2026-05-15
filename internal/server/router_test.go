@@ -19,8 +19,8 @@ func testDeps(t *testing.T) Deps {
 	t.Cleanup(func() { db.Close() })
 	return Deps{
 		Store:       db,
-		HabitsStore: habits.NewStore(db),
-		TasksStore:  tasks.NewStore(db),
+		HabitsStore: habits.NewStore(db.DB),
+		TasksStore:  tasks.NewStore(db.DB),
 	}
 }
 
