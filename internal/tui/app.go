@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,26 +36,31 @@ var tabList = []Tab{TabHabits, TabTasks, TabFinance, TabCalendar, TabKnowledge, 
 type mode int
 
 const (
-	modeList mode = iota
-	modeCreate
+	modeList      mode = iota
+	modeCreate         // creating a new item
+	modeBackfill       // selecting backfill date, then increment/decrement applies to that date
 )
 
+var freqCycle = []string{"daily", "weekly", "monthly"}
+
 type Model struct {
-	width      int
-	height     int
-	activeTab  Tab
-	viewport   viewport.Model
-	ready      bool
-	mode       mode
-	input      textinput.Model
-	createFreq string
+	width       int
+	height      int
+	activeTab   Tab
+	viewport    viewport.Model
+	ready       bool
+	mode        mode
+	input       textinput.Model
+	createFreq  string
+	createTarget int
 
 	hStore *habits.Store
 	tStore *tasks.Store
 
-	habits     []core.Habit
-	taskList   []core.Task
-	selected   int
+	habits      []core.Habit
+	taskList    []core.Task
+	selected    int
+	backfillDate string
 }
 
 func New(deps server.Deps) *Model {
@@ -63,12 +69,14 @@ func New(deps server.Deps) *Model {
 	ti.CharLimit = 100
 
 	return &Model{
-		activeTab:  TabHabits,
-		mode:       modeList,
-		input:      ti,
-		createFreq: "daily",
-		hStore:     deps.HabitsStore,
-		tStore:     deps.TasksStore,
+		activeTab:    TabHabits,
+		mode:         modeList,
+		input:        ti,
+		createFreq:   "daily",
+		createTarget: 1,
+		backfillDate: time.Now().Format("2006-01-02"),
+		hStore:       deps.HabitsStore,
+		tStore:       deps.TasksStore,
 	}
 }
 
@@ -96,7 +104,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 
-	if m.mode == modeCreate {
+	if m.mode != modeList {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -105,38 +113,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) targetDate() string {
+	if m.mode == modeBackfill {
+		return m.backfillDate
+	}
+	return time.Now().Format("2006-01-02")
+}
+
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeCreate {
-		switch msg.String() {
-		case "esc":
-			m.mode = modeList
-			m.input.Reset()
-			return m, nil
-		case "enter":
-			val := strings.TrimSpace(m.input.Value())
-			if val != "" {
-				switch m.activeTab {
-				case TabHabits:
-					m.hStore.Create(&core.Habit{Name: val, Frequency: m.createFreq})
-				case TabTasks:
-					m.tStore.CreateTask(&core.Task{Title: val, Status: "todo", Priority: "med"})
-				}
-			}
-			m.mode = modeList
-			m.input.Reset()
-			m.refresh()
-			return m, nil
-		case "tab":
-			if m.activeTab == TabHabits {
-				if m.createFreq == "daily" {
-					m.createFreq = "weekly"
-				} else {
-					m.createFreq = "daily"
-				}
-			}
-			return m, nil
-		}
-		return m, nil
+		return m.handleCreateKey(msg)
+	}
+	if m.mode == modeBackfill {
+		return m.handleBackfillKey(msg)
 	}
 
 	switch msg.String() {
@@ -166,17 +155,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		m.selected++
 		m.clampSelection()
-		m.viewport.SetContent(m.contentForTab(m.activeTab))
 
 	case "k", "up":
 		m.selected--
 		m.clampSelection()
-		m.viewport.SetContent(m.contentForTab(m.activeTab))
 
 	case "g":
 		m.selected = 0
 		m.viewport.GotoTop()
-
 	case "G":
 		switch m.activeTab {
 		case TabHabits:
@@ -188,23 +174,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case "n":
-		m.mode = modeCreate
-		m.input.Focus()
-		return m, nil
+		if m.activeTab == TabHabits || m.activeTab == TabTasks {
+			m.mode = modeCreate
+			m.createFreq = "daily"
+			m.createTarget = 1
+			m.input.Focus()
+		}
+
+	case "+", "=":
+		if m.activeTab == TabHabits && m.selected < len(m.habits) {
+			m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), 1)
+			m.refresh()
+		}
+
+	case "-":
+		if m.activeTab == TabHabits && m.selected < len(m.habits) {
+			m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), -1)
+			m.refresh()
+		}
 
 	case "x":
-		switch m.activeTab {
-		case TabHabits:
-			if m.selected < len(m.habits) {
-				today := time.Now().Format("2006-01-02")
-				m.hStore.AddEntry(m.habits[m.selected].ID, today, 1, "")
-				m.refresh()
-			}
-		case TabTasks:
-			if m.selected < len(m.taskList) {
-				m.tStore.CompleteTask(m.taskList[m.selected].ID)
-				m.refresh()
-			}
+		if m.activeTab == TabHabits && m.selected < len(m.habits) {
+			h := m.habits[m.selected]
+			m.hStore.SetEntry(h.ID, m.targetDate(), h.TargetValue, "")
+			m.refresh()
+		}
+		if m.activeTab == TabTasks && m.selected < len(m.taskList) {
+			m.tStore.CompleteTask(m.taskList[m.selected].ID)
+			m.refresh()
+		}
+
+	case "b":
+		if m.activeTab == TabHabits {
+			m.mode = modeBackfill
+			m.backfillDate = time.Now().Format("2006-01-02")
+			m.input.SetValue(m.backfillDate)
+			m.input.Focus()
 		}
 
 	case "d":
@@ -225,6 +230,89 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		return m, nil
+
+	case "enter":
+		val := strings.TrimSpace(m.input.Value())
+		if val == "" {
+			return m, nil
+		}
+		switch m.activeTab {
+		case TabHabits:
+			m.hStore.Create(&core.Habit{Name: val, Frequency: m.createFreq, TargetValue: m.createTarget})
+		case TabTasks:
+			m.tStore.CreateTask(&core.Task{Title: val, Status: "todo", Priority: "med"})
+		}
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		m.refresh()
+		return m, nil
+
+	case "tab":
+		if m.activeTab == TabHabits {
+			for i, f := range freqCycle {
+				if f == m.createFreq {
+					m.createFreq = freqCycle[(i+1)%len(freqCycle)]
+					break
+				}
+			}
+		}
+		return m, nil
+
+	case "[", "{":
+		if m.activeTab == TabHabits && m.createTarget > 1 {
+			m.createTarget--
+		}
+
+	case "]", "}":
+		if m.activeTab == TabHabits {
+			m.createTarget++
+		}
+
+	default:
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) handleBackfillKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		m.backfillDate = time.Now().Format("2006-01-02")
+		return m, nil
+
+	case "enter":
+		val := strings.TrimSpace(m.input.Value())
+		if val != "" {
+			if _, err := time.Parse("2006-01-02", val); err == nil {
+				m.backfillDate = val
+			}
+		}
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
 }
 
 func (m *Model) clampSelection() {
@@ -311,13 +399,24 @@ func (m *Model) renderHelp() string {
 		Foreground(lipgloss.Color("#888888"))
 
 	if m.mode == modeCreate {
-		return style.Render("  enter confirm  │  esc cancel  │  tab toggle frequency")
+		switch m.activeTab {
+		case TabHabits:
+			return style.Render(fmt.Sprintf(
+				"  enter confirm  │  esc cancel  │  tab freq [%s]  │  [/] target [%d]",
+				m.createFreq, m.createTarget))
+		default:
+			return style.Render("  enter confirm  │  esc cancel")
+		}
+	}
+
+	if m.mode == modeBackfill {
+		return style.Render("  enter confirm date  │  esc cancel  │  type YYYY-MM-DD")
 	}
 
 	var actions string
 	switch m.activeTab {
 	case TabHabits:
-		actions = "n new  │  x complete  │  d delete"
+		actions = "n new  │  +/− adjust  │  x meet target  │  b backfill  │  d delete"
 	case TabTasks:
 		actions = "n new  │  x complete  │  d delete"
 	default:
@@ -329,6 +428,9 @@ func (m *Model) renderHelp() string {
 func (m *Model) contentForTab(tab Tab) string {
 	if m.mode == modeCreate {
 		return m.renderCreateForm(tab)
+	}
+	if m.mode == modeBackfill {
+		return m.renderBackfillForm()
 	}
 
 	var sb strings.Builder
@@ -353,10 +455,20 @@ func (m *Model) renderCreateForm(tab Tab) string {
 	sb.WriteString(m.input.View() + "\n\n")
 
 	if tab == TabHabits {
-		freqStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
-		sb.WriteString("Frequency: " + freqStyle.Render(m.createFreq) + " (tab to toggle)\n")
+		acc := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
+		sb.WriteString("Frequency: " + acc.Render(m.createFreq) + " (tab to cycle)\n")
+		sb.WriteString("Target:    " + acc.Render(strconv.Itoa(m.createTarget)) + " ([ / ] to adjust)\n")
 	}
 
+	return sb.String()
+}
+
+func (m *Model) renderBackfillForm() string {
+	var sb strings.Builder
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Backfill date") + "\n\n")
+	sb.WriteString("Set a date, then +/−/x will apply to that date.\n\n")
+	sb.WriteString("Date: " + m.input.View() + "\n\n")
+	sb.WriteString("Press enter to confirm, esc to cancel.\n")
 	return sb.String()
 }
 
@@ -368,6 +480,7 @@ func (m *Model) renderHabits() string {
 	var sb strings.Builder
 	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
 
 	for i, h := range m.habits {
 		prefix := "  "
@@ -376,19 +489,30 @@ func (m *Model) renderHabits() string {
 		}
 
 		stats, _ := m.hStore.Stats(h.ID)
-		streak := ""
-		if stats != nil && stats.CurrentStreak > 0 {
-			streak = dimStyle.Render(fmt.Sprintf("  [%dd streak]", stats.CurrentStreak))
+		todayVal := 0
+		streak := 0
+		if stats != nil {
+			todayVal = stats.TodayValue
+			streak = stats.CurrentStreak
 		}
 
-		done := " "
-		if stats != nil && stats.TodayDone {
-			done = selStyle.Render("✓")
+		counter := fmt.Sprintf("%d/%d", todayVal, h.TargetValue)
+		if todayVal >= h.TargetValue {
+			counter = greenStyle.Render(counter)
 		}
 
-		sb.WriteString(fmt.Sprintf("%s[%s] %s%s%s\n",
-			prefix, done, h.Name, streak,
-			dimStyle.Render("  "+h.Frequency)))
+		streakStr := ""
+		if streak > 0 {
+			streakStr = dimStyle.Render(fmt.Sprintf("  [%dd streak]", streak))
+		}
+
+		dateLabel := ""
+		if m.mode == modeBackfill {
+			dateLabel = dimStyle.Render("  @" + m.backfillDate)
+		}
+
+		sb.WriteString(fmt.Sprintf("%s%s  %s  %s%s%s\n",
+			prefix, counter, h.Name, dimStyle.Render(h.Frequency), streakStr, dateLabel))
 	}
 	return sb.String()
 }

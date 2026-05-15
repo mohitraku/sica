@@ -55,6 +55,7 @@ func migrate(db *sql.DB) error {
 			name TEXT NOT NULL,
 			description TEXT DEFAULT '',
 			frequency TEXT NOT NULL DEFAULT 'daily',
+			target_value INTEGER NOT NULL DEFAULT 1,
 			color TEXT DEFAULT '',
 			icon TEXT DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -160,5 +161,9 @@ func migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_time);
 		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(doc_id);
 	`)
+
+	// Migration: add target_value for existing databases.
+	db.Exec(`ALTER TABLE habits ADD COLUMN target_value INTEGER NOT NULL DEFAULT 1`)
+
 	return err
 }

@@ -53,7 +53,9 @@ func New(deps Deps) http.Handler {
 			r.Route("/{id}", func(r chi.Router) {
 				r.Put("/", hhabits.Update)
 				r.Delete("/", hhabits.Delete)
-				r.Post("/entry", hhabits.AddEntry)
+				r.Post("/entry", hhabits.SetEntry)
+					r.Post("/increment", hhabits.Increment)
+					r.Post("/decrement", hhabits.Decrement)
 				r.Delete("/entry", hhabits.RemoveEntry)
 				r.Get("/stats", hhabits.Stats)
 			})

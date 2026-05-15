@@ -4,13 +4,14 @@ import "time"
 
 // Habit models a recurring habit.
 type Habit struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Frequency   string    `json:"frequency"`
-	Color       string    `json:"color,omitempty"`
-	Icon        string    `json:"icon,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Frequency   string     `json:"frequency"`
+	TargetValue int        `json:"target_value"`
+	Color       string     `json:"color,omitempty"`
+	Icon        string     `json:"icon,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
 }
 

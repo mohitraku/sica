@@ -35,6 +35,9 @@ func (h *HabitsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if habit.Frequency == "" {
 		habit.Frequency = "daily"
 	}
+	if habit.TargetValue <= 0 {
+		habit.TargetValue = 1
+	}
 	if err := h.Store.Create(&habit); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -66,7 +69,7 @@ func (h *HabitsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusNoContent, nil)
 }
 
-func (h *HabitsHandler) AddEntry(w http.ResponseWriter, r *http.Request) {
+func (h *HabitsHandler) SetEntry(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var entry struct {
 		Date  string `json:"date"`
@@ -77,14 +80,53 @@ func (h *HabitsHandler) AddEntry(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if entry.Value == 0 {
-		entry.Value = 1
-	}
-	if err := h.Store.AddEntry(id, entry.Date, entry.Value, entry.Notes); err != nil {
+	if err := h.Store.SetEntry(id, entry.Date, entry.Value, entry.Notes); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respond(w, http.StatusOK, map[string]string{"status": "ok"})
+	respond(w, http.StatusOK, map[string]interface{}{"date": entry.Date, "value": entry.Value})
+}
+
+func (h *HabitsHandler) Increment(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var req struct {
+		Date  string `json:"date"`
+		Delta int    `json:"delta"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Delta == 0 {
+		req.Delta = 1
+	}
+	newVal, err := h.Store.IncrementEntry(id, req.Date, req.Delta)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]interface{}{"date": req.Date, "value": newVal})
+}
+
+func (h *HabitsHandler) Decrement(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var req struct {
+		Date  string `json:"date"`
+		Delta int    `json:"delta"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Delta <= 0 {
+		req.Delta = 1
+	}
+	newVal, err := h.Store.IncrementEntry(id, req.Date, -req.Delta)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]interface{}{"date": req.Date, "value": newVal})
 }
 
 func (h *HabitsHandler) RemoveEntry(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,6 +25,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+
+	logFile, err := os.OpenFile(filepath.Join(config.SicaDir(), "server.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatalf("open log file: %v", err)
+	}
+	defer logFile.Close()
+	log.SetOutput(logFile)
 
 	store, err := sqlite.Open(cfg.Database.Path)
 	if err != nil {
