@@ -16,6 +16,7 @@ import (
 	"github.com/mojitrk/sica/internal/habits"
 	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/tasks"
+	"github.com/mojitrk/sica/internal/budgets"
 	"github.com/mojitrk/sica/internal/transactions"
 )
 
@@ -80,16 +81,18 @@ type Model struct {
 	tStore    *tasks.Store
 	kStore    *knowledge.Store
 	txnStore  *transactions.Store
+	bStore    *budgets.Store
 
 	habits       []core.Habit
 	taskList     []core.Task
 	docs         []core.KnowledgeDoc
 	transactions []core.Transaction
+	budgets      []core.Budget
 	selected     int
 	backfillDate string
 }
 
-func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txnStore *transactions.Store) *Model {
+func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txnStore *transactions.Store, bStore *budgets.Store) *Model {
 	ti := textinput.New()
 	ti.Placeholder = "Name..."
 	ti.CharLimit = 100
@@ -105,6 +108,7 @@ func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txn
 		tStore:       tStore,
 		kStore:       kStore,
 		txnStore:     txnStore,
+		bStore:       bStore,
 	}
 }
 
@@ -233,6 +237,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+
+		case "B":
+			if m.activeTab == TabFinance {
+				m.mode = modeCreate
+				m.input.Placeholder = "category amount..."
+				m.input.Focus()
+			}
 	case "+", "=":
 		if m.activeTab == TabHabits && m.selected < len(m.habits) {
 			m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), 1)
@@ -441,6 +452,7 @@ func (m *Model) refresh() {
 		m.taskList, _ = m.tStore.ListTasks(tasks.Filter{})
 	case TabFinance:
 		now := time.Now()
+		m.budgets, _ = m.bStore.List()
 		m.transactions, _ = m.txnStore.List(transactions.Filter{
 			Year: now.Year(), Month: int(now.Month()),
 		})
@@ -683,14 +695,11 @@ func (m *Model) renderTasks() string {
 }
 
 func (m *Model) renderFinance() string {
-	if len(m.transactions) == 0 {
-		return "No transactions this month.\n\nPress 'n' to add one:  +/−amt category\n"
-	}
-
 	var sb strings.Builder
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 	incomeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
 	expenseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cc7c7c"))
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cc7c7c"))
 
 	now := time.Now()
 	summary, _ := m.txnStore.MonthSummary(now.Year(), int(now.Month()))
@@ -702,7 +711,34 @@ func (m *Model) renderFinance() string {
 		if balance < 0 {
 			balStyle = expenseStyle
 		}
-		sb.WriteString(fmt.Sprintf("  Balance:  %s\n\n", balStyle.Render("$"+formatCents(balance))))
+		sb.WriteString(fmt.Sprintf("  Balance:  %s\n", balStyle.Render("$"+formatCents(balance))))
+
+		if len(m.budgets) > 0 {
+			sb.WriteString("\n  ── Budgets ──\n")
+			for _, b := range m.budgets {
+				spent := summary.ByCategory[b.Category]
+				pct := int64(0)
+				if b.AmountCents > 0 {
+					pct = spent * 100 / b.AmountCents
+				}
+				pctStr := dimStyle.Render(fmt.Sprintf("[%d%%]", pct))
+				if pct > 100 {
+					pctStr = warnStyle.Render(fmt.Sprintf("[%d%%!]", pct))
+				}
+				spentStr := expenseStyle.Render("$" + formatCents(spent))
+				budgetStr := dimStyle.Render("$" + formatCents(b.AmountCents))
+				sb.WriteString(fmt.Sprintf("    %s  %s / %s  %s\n", b.Category, spentStr, budgetStr, pctStr))
+			}
+		}
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("\n")
+	}
+
+	if len(m.transactions) == 0 {
+		sb.WriteString("No transactions this month.\n\nPress 'n' to add one:  +/−amt category\n")
+		sb.WriteString("Press 'B' to set a budget:     category amount\n")
+		return sb.String()
 	}
 
 	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
@@ -794,4 +830,20 @@ func parseTransaction(input string) (amount int64, category string, txType strin
 
 	cents := int64(math.Round(math.Abs(dollars) * 100))
 	return cents, category, txType
+}
+
+func parseBudget(input string) (category string, amountCents int64) {
+	input = strings.TrimSpace(input)
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return "other", 0
+	}
+	category = parts[0]
+	if len(parts) > 1 {
+		dollars, err := strconv.ParseFloat(parts[1], 64)
+		if err == nil {
+			amountCents = int64(math.Round(math.Abs(dollars) * 100))
+		}
+	}
+	return category, amountCents
 }
