@@ -78,7 +78,7 @@ func (t Tab) String() string {
 	return []string{"Habits", "Tasks", "Finance", "Calendar", "Knowledge", "Chat"}[t]
 }
 
-var tabList = []Tab{TabHabits, TabTasks, TabFinance, TabCalendar, TabKnowledge, TabChat}
+const numTabs = 6
 
 type mode int
 
@@ -88,7 +88,6 @@ const (
 	modeBackfill      // selecting backfill date, then increment/decrement applies to that date
 )
 
-var freqCycle = []string{"daily", "weekly", "monthly"}
 
 type Model struct {
 	width        int
@@ -206,6 +205,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeBackfill {
 		return m.handleBackfillKey(msg)
 	}
+	if m.activeTab == TabChat && m.chatConvID > 0 {
+		return m.handleChatKey(msg)
+	}
 
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -220,13 +222,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 
 	case "tab":
-		m.activeTab = (m.activeTab + 1) % Tab(len(tabList))
+		m.activeTab = (m.activeTab + 1) % numTabs
 		m.selected = 0
 		m.mode = modeList
 		m.refresh()
 
 	case "shift+tab":
-		m.activeTab = (m.activeTab - 1 + Tab(len(tabList))) % Tab(len(tabList))
+		m.activeTab = (m.activeTab - 1 + numTabs) % numTabs
 		m.selected = 0
 		m.mode = modeList
 		m.refresh()
@@ -315,8 +317,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		if m.activeTab == TabKnowledge && m.selected < len(m.docs) {
-			m.viewDoc(m.docs[m.selected].ID)
+		if m.activeTab == TabChat && m.chatConvID == 0 && m.selected < len(m.chatConvs) {
+			m.chatConvID = m.chatConvs[m.selected].ID
+			m.chatMsgs, _ = m.chStore.Messages(m.chatConvID)
+			m.selected = 0
+			m.input.Placeholder = "Message..."
+			m.input.Focus()
+			m.refresh()
 		}
 
 	case "d":
@@ -351,19 +358,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selected = 0
 				m.refresh()
 			}
+		case TabChat:
+			if m.chatConvID == 0 && m.selected < len(m.chatConvs) {
+				m.chStore.DeleteConversation(m.chatConvs[m.selected].ID)
+				m.selected = 0
+				m.refresh()
+			}
 		}
 	}
 
 	return m, nil
 }
 
-func (m *Model) viewDoc(id int64) {
-	content, err := m.kStore.ReadContent(id)
-	if err != nil {
-		return
-	}
-	_ = content
-}
 
 func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -396,15 +402,25 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case TabKnowledge:
 			return m, ingestURL(m.kStore, val)
 		case TabFinance:
-			amount, cat, txType := parseTransaction(val)
-			m.txnStore.Add(&core.Transaction{
-				Amount:   amount,
-				Type:     txType,
-				Category: cat,
-			})
+			if m.input.Placeholder == "category amount..." {
+				cat, amt := parseBudget(val)
+				m.bStore.Create(&core.Budget{Category: cat, AmountCents: amt, Period: "monthly", StartDate: time.Now().Format("2006-01-02")})
+			} else {
+				amount, cat, txType := parseTransaction(val)
+				m.txnStore.Add(&core.Transaction{Amount: amount, Type: txType, Category: cat})
+			}
 			m.mode = modeList
 			m.input.Reset()
 			m.input.Placeholder = "Name..."
+			m.refresh()
+			return m, nil
+		case TabChat:
+			id, _ := m.chStore.CreateConversation(val, m.ollama.Model)
+			m.chatConvID = id
+			m.chatMsgs = nil
+			m.input.Placeholder = "Message..."
+			m.input.Focus()
+			m.mode = modeList
 			m.refresh()
 			return m, nil
 		}
@@ -413,9 +429,10 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		if m.activeTab == TabHabits {
-			for i, f := range freqCycle {
+			cycles := []string{"daily", "weekly", "monthly"}
+			for i, f := range cycles {
 				if f == m.createFreq {
-					m.createFreq = freqCycle[(i+1)%len(freqCycle)]
+					m.createFreq = cycles[(i+1)%len(cycles)]
 					break
 				}
 			}
@@ -511,6 +528,14 @@ func (m *Model) clampSelection() {
 		max = len(m.transactions) - 1
 	case TabKnowledge:
 		max = len(m.docs) - 1
+		case TabCalendar:
+			max = len(m.events) - 1
+		case TabChat:
+			if m.chatConvID > 0 {
+				max = len(m.chatMsgs) - 1
+			} else {
+				max = len(m.chatConvs) - 1
+			}
 	}
 	if m.selected < 0 {
 		m.selected = 0
@@ -539,6 +564,11 @@ func (m *Model) refresh() {
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		end := start.AddDate(0, 1, 0)
 		m.events, _ = m.cStore.List(start, end)
+	case TabChat:
+		m.chatConvs, _ = m.chStore.ListConversations()
+		if m.chatConvID > 0 {
+			m.chatMsgs, _ = m.chStore.Messages(m.chatConvID)
+		}
 	}
 	m.clampSelection()
 }
@@ -573,7 +603,7 @@ func (m *Model) renderSidebar(w, h int) string {
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc")).Bold(true)
 	sb.WriteString(title.Render("  sica") + "\n\n")
 
-	for _, t := range tabList {
+	for _, t := range []Tab{TabHabits, TabTasks, TabFinance, TabCalendar, TabKnowledge, TabChat} {
 		prefix := "  "
 		suffix := ""
 		if t == m.activeTab {
@@ -592,6 +622,8 @@ func (m *Model) renderSidebar(w, h int) string {
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.transactions)))
 	case TabKnowledge:
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.docs)))
+	case TabChat:
+		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.chatConvs)))
 	}
 
 	return style.Render(sb.String())
@@ -633,6 +665,12 @@ func (m *Model) renderHelp() string {
 		actions = "n add  │  d delete"
 	case TabKnowledge:
 		actions = "n ingest URL  │  enter view  │  d delete"
+	case TabChat:
+		if m.chatConvID > 0 {
+			actions = "esc back"
+		} else {
+			actions = "n new  │  enter open  │  d delete"
+		}
 	default:
 		actions = ""
 	}
@@ -663,7 +701,7 @@ func (m *Model) contentForTab(tab Tab) string {
 	case TabCalendar:
 		sb.WriteString(m.renderCalendar())
 	case TabChat:
-		sb.WriteString("Coming soon.\n")
+		sb.WriteString(m.renderChat())
 	}
 
 	return sb.String()
@@ -901,7 +939,6 @@ func (m *Model) renderChat() string {
 		modelStr := dimStyle.Render("  [" + c.Model + "]")
 		sb.WriteString(fmt.Sprintf("%s%s%s\n", prefix, c.Title, modelStr))
 	}
-	sb.WriteString("\n" + dimStyle.Render("enter to open  │  d to delete"))
 	return sb.String()
 }
 

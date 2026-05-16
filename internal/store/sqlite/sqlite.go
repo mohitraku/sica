@@ -149,19 +149,10 @@ func migrate(db *sql.DB) error {
 
 		CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(title, content, tokenize='porter unicode61');
 
-		CREATE TABLE IF NOT EXISTS knowledge_chunks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			doc_id INTEGER NOT NULL REFERENCES knowledge_docs(id) ON DELETE CASCADE,
-			content TEXT NOT NULL,
-			embedding BLOB,
-			chunk_index INTEGER NOT NULL
-		);
-
 		CREATE INDEX IF NOT EXISTS idx_habit_entries_date ON habit_entries(date);
 		CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 		CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 		CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_time);
-		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(doc_id);
 	`)
 
 	// Migration: add target_value for databases created before the column existed.

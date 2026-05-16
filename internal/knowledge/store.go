@@ -171,7 +171,6 @@ func (s *Store) Delete(id int64) error {
 	}
 	s.db.Exec(`DELETE FROM knowledge_fts WHERE rowid=?`, id)
 	s.db.Exec(`DELETE FROM knowledge_docs WHERE id=?`, id)
-	s.db.Exec(`DELETE FROM knowledge_chunks WHERE doc_id=?`, id)
 	return nil
 }
 

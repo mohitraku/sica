@@ -13,7 +13,6 @@ type Config struct {
 	Database  databaseConfig  `mapstructure:"database"`
 	Knowledge knowledgeConfig `mapstructure:"knowledge"`
 	AI        aiConfig        `mapstructure:"ai"`
-	Calendar  calendarConfig  `mapstructure:"calendar"`
 }
 
 type databaseConfig struct {
@@ -25,35 +24,12 @@ type knowledgeConfig struct {
 }
 
 type aiConfig struct {
-	DefaultProvider string       `mapstructure:"default_provider"`
-	Ollama          ollamaConfig `mapstructure:"ollama"`
-	Claude          claudeConfig `mapstructure:"claude"`
-	OpenAI          openaiConfig `mapstructure:"openai"`
+	Ollama ollamaConfig `mapstructure:"ollama"`
 }
 
 type ollamaConfig struct {
-	Host           string `mapstructure:"host"`
-	Model          string `mapstructure:"model"`
-	EmbeddingModel string `mapstructure:"embedding_model"`
-}
-
-type claudeConfig struct {
-	APIKey string `mapstructure:"api_key"`
-	Model  string `mapstructure:"model"`
-}
-
-type openaiConfig struct {
-	APIKey string `mapstructure:"api_key"`
-	Model  string `mapstructure:"model"`
-}
-
-type calendarConfig struct {
-	Outlook outlookConfig `mapstructure:"outlook"`
-}
-
-type outlookConfig struct {
-	ClientID    string `mapstructure:"client_id"`
-	RedirectURL string `mapstructure:"redirect_url"`
+	Host  string `mapstructure:"host"`
+	Model string `mapstructure:"model"`
 }
 
 func SicaDir() string {
@@ -74,22 +50,9 @@ func defaultConfig() *Config {
 			Path: filepath.Join(sicaDir, "knowledge"),
 		},
 		AI: aiConfig{
-			DefaultProvider: "ollama",
 			Ollama: ollamaConfig{
-				Host:           "http://localhost:11434",
-				Model:          "qwen2.5:14b",
-				EmbeddingModel: "nomic-embed-text",
-			},
-			Claude: claudeConfig{
-				Model: "claude-sonnet-4-6",
-			},
-			OpenAI: openaiConfig{
-				Model: "gpt-4o",
-			},
-		},
-		Calendar: calendarConfig{
-			Outlook: outlookConfig{
-				RedirectURL: "http://localhost:8420/auth/outlook/callback",
+				Host:  "http://localhost:11434",
+				Model: "qwen2.5:14b",
 			},
 		},
 	}
@@ -111,7 +74,6 @@ func Load() (*Config, error) {
 	v.SetDefault("database", cfg.Database)
 	v.SetDefault("knowledge", cfg.Knowledge)
 	v.SetDefault("ai", cfg.AI)
-	v.SetDefault("calendar", cfg.Calendar)
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		f, ferr := os.Create(configPath)

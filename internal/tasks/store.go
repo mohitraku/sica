@@ -69,9 +69,6 @@ func (s *Store) CreateTask(t *core.Task) error {
 	return nil
 }
 
-func scanTime(s string) (time.Time, error) {
-	return time.Parse("2006-01-02 15:04:05", s)
-}
 
 func (s *Store) GetTask(id int64) (*core.Task, error) {
 	t := &core.Task{}
@@ -88,14 +85,14 @@ func (s *Store) GetTask(id int64) (*core.Task, error) {
 		return nil, err
 	}
 	if createdAt.Valid {
-		t.CreatedAt, _ = scanTime(createdAt.String)
+		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt.String)
 	}
 	if dueDate.Valid {
 		d, _ := time.Parse("2006-01-02", dueDate.String)
 		t.DueDate = &d
 	}
 	if completedAt.Valid {
-		c, _ := scanTime(completedAt.String)
+		c, _ := time.Parse("2006-01-02 15:04:05", completedAt.String)
 		t.CompletedAt = &c
 	}
 	return t, nil
@@ -138,14 +135,14 @@ func (s *Store) ListTasks(f Filter) ([]core.Task, error) {
 			return nil, err
 		}
 		if createdAt.Valid {
-			t.CreatedAt, _ = scanTime(createdAt.String)
+			t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt.String)
 		}
 		if dueDate.Valid {
 			d, _ := time.Parse("2006-01-02", dueDate.String)
 			t.DueDate = &d
 		}
 		if completedAt.Valid {
-			c, _ := scanTime(completedAt.String)
+			c, _ := time.Parse("2006-01-02 15:04:05", completedAt.String)
 			t.CompletedAt = &c
 		}
 		tasks = append(tasks, t)
