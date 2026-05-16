@@ -11,7 +11,9 @@ import (
 	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/store/sqlite"
 	"github.com/mojitrk/sica/internal/tasks"
+	"github.com/mojitrk/sica/internal/calendar"
 	"github.com/mojitrk/sica/internal/budgets"
+	"github.com/mojitrk/sica/internal/chat"
 	"github.com/mojitrk/sica/internal/transactions"
 	"github.com/mojitrk/sica/internal/tui"
 )
@@ -41,10 +43,13 @@ func main() {
 	hStore := habits.NewStore(store.DB)
 	tStore := tasks.NewStore(store.DB)
 	kStore := knowledge.NewStore(store.DB, cfg.Knowledge.Path)
+	cStore := calendar.NewStore(store.DB)
 	bStore := budgets.NewStore(store.DB)
 	txnStore := transactions.NewStore(store.DB)
+	chStore := chat.NewStore(store.DB)
+	ollamaClient := chat.NewClient(cfg.AI.Ollama.Host, cfg.AI.Ollama.Model)
 
-	p := tea.NewProgram(tui.New(hStore, tStore, kStore, txnStore, bStore), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(hStore, tStore, kStore, txnStore, bStore, cStore, chStore, ollamaClient), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("tui error: %v", err)
 	}
