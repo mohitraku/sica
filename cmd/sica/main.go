@@ -11,6 +11,7 @@ import (
 	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/store/sqlite"
 	"github.com/mojitrk/sica/internal/tasks"
+	"github.com/mojitrk/sica/internal/transactions"
 	"github.com/mojitrk/sica/internal/tui"
 )
 
@@ -39,8 +40,9 @@ func main() {
 	hStore := habits.NewStore(store.DB)
 	tStore := tasks.NewStore(store.DB)
 	kStore := knowledge.NewStore(store.DB, cfg.Knowledge.Path)
+	txnStore := transactions.NewStore(store.DB)
 
-	p := tea.NewProgram(tui.New(hStore, tStore, kStore), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(hStore, tStore, kStore, txnStore), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("tui error: %v", err)
 	}

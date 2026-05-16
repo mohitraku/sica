@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +16,27 @@ import (
 	"github.com/mojitrk/sica/internal/habits"
 	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/tasks"
+	"github.com/mojitrk/sica/internal/transactions"
 )
+
+type ingestMsg struct {
+	err error
+	doc *core.KnowledgeDoc
+}
+
+func ingestURL(kStore *knowledge.Store, rawURL string) tea.Cmd {
+	return func() tea.Msg {
+		result, err := knowledge.IngestURL(rawURL)
+		if err != nil {
+			return ingestMsg{err: err}
+		}
+		doc, err := kStore.Save(result.Title, result.Body, result.SourceURL, nil)
+		if err != nil {
+			return ingestMsg{err: err}
+		}
+		return ingestMsg{doc: doc}
+	}
+}
 
 type Tab int
 
@@ -36,36 +58,38 @@ var tabList = []Tab{TabHabits, TabTasks, TabFinance, TabCalendar, TabKnowledge, 
 type mode int
 
 const (
-	modeList      mode = iota
-	modeCreate         // creating a new item
-	modeBackfill       // selecting backfill date, then increment/decrement applies to that date
+	modeList     mode = iota
+	modeCreate        // creating a new item
+	modeBackfill      // selecting backfill date, then increment/decrement applies to that date
 )
 
 var freqCycle = []string{"daily", "weekly", "monthly"}
 
 type Model struct {
-	width       int
-	height      int
-	activeTab   Tab
-	viewport    viewport.Model
-	ready       bool
-	mode        mode
-	input       textinput.Model
-	createFreq  string
+	width        int
+	height       int
+	activeTab    Tab
+	viewport     viewport.Model
+	ready        bool
+	mode         mode
+	input        textinput.Model
+	createFreq   string
 	createTarget int
 
-	hStore *habits.Store
-	tStore *tasks.Store
-	kStore *knowledge.Store
+	hStore    *habits.Store
+	tStore    *tasks.Store
+	kStore    *knowledge.Store
+	txnStore  *transactions.Store
 
-	habits      []core.Habit
-	taskList    []core.Task
-	docs        []core.KnowledgeDoc
-	selected    int
+	habits       []core.Habit
+	taskList     []core.Task
+	docs         []core.KnowledgeDoc
+	transactions []core.Transaction
+	selected     int
 	backfillDate string
 }
 
-func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store) *Model {
+func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txnStore *transactions.Store) *Model {
 	ti := textinput.New()
 	ti.Placeholder = "Name..."
 	ti.CharLimit = 100
@@ -80,6 +104,7 @@ func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store) *Mo
 		hStore:       hStore,
 		tStore:       tStore,
 		kStore:       kStore,
+		txnStore:     txnStore,
 	}
 }
 
@@ -89,6 +114,18 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case ingestMsg:
+		if msg.err != nil {
+			log.Printf("ingest error: %v", msg.err)
+		} else {
+			log.Printf("ingested: %s", msg.doc.Title)
+		}
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		m.refresh()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -172,6 +209,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selected = len(m.habits) - 1
 		case TabTasks:
 			m.selected = len(m.taskList) - 1
+		case TabFinance:
+			m.selected = len(m.transactions) - 1
 		case TabKnowledge:
 			m.selected = len(m.docs) - 1
 		}
@@ -179,11 +218,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case "n":
-		if m.activeTab == TabHabits || m.activeTab == TabTasks {
+		if m.activeTab == TabHabits || m.activeTab == TabTasks || m.activeTab == TabKnowledge || m.activeTab == TabFinance {
 			m.mode = modeCreate
 			m.createFreq = "daily"
 			m.createTarget = 1
 			m.input.Focus()
+			switch m.activeTab {
+			case TabKnowledge:
+				m.input.Placeholder = "URL..."
+			case TabFinance:
+				m.input.Placeholder = "+/-amt category..."
+			default:
+				m.input.Placeholder = "Name..."
+			}
 		}
 
 	case "+", "=":
@@ -236,6 +283,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selected = 0
 				m.refresh()
 			}
+		case TabFinance:
+			if m.selected < len(m.transactions) {
+				m.txnStore.Delete(m.transactions[m.selected].ID)
+				m.selected = 0
+				m.refresh()
+			}
 		case TabKnowledge:
 			if m.selected < len(m.docs) {
 				m.kStore.Delete(m.docs[m.selected].ID)
@@ -249,8 +302,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewDoc(id int64) {
-	// Viewing doc content in TUI — for now we print to log.
-	// A future detail view overlay would show this in-app.
 	content, err := m.kStore.ReadContent(id)
 	if err != nil {
 		return
@@ -274,13 +325,34 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case TabHabits:
 			m.hStore.Create(&core.Habit{Name: val, Frequency: m.createFreq, TargetValue: m.createTarget})
+			m.mode = modeList
+			m.input.Reset()
+			m.input.Placeholder = "Name..."
+			m.refresh()
+			return m, nil
 		case TabTasks:
 			m.tStore.CreateTask(&core.Task{Title: val, Status: "todo", Priority: "med"})
+			m.mode = modeList
+			m.input.Reset()
+			m.input.Placeholder = "Name..."
+			m.refresh()
+			return m, nil
+		case TabKnowledge:
+			return m, ingestURL(m.kStore, val)
+		case TabFinance:
+			amount, cat, txType := parseTransaction(val)
+			m.txnStore.Add(&core.Transaction{
+				Amount:   amount,
+				Type:     txType,
+				Category: cat,
+			})
+			m.mode = modeList
+			m.input.Reset()
+			m.input.Placeholder = "Name..."
+			m.refresh()
+			return m, nil
 		}
-		m.mode = modeList
-		m.input.Reset()
-		m.input.Placeholder = "Name..."
-		m.refresh()
+
 		return m, nil
 
 	case "tab":
@@ -348,6 +420,8 @@ func (m *Model) clampSelection() {
 		max = len(m.habits) - 1
 	case TabTasks:
 		max = len(m.taskList) - 1
+	case TabFinance:
+		max = len(m.transactions) - 1
 	case TabKnowledge:
 		max = len(m.docs) - 1
 	}
@@ -365,6 +439,11 @@ func (m *Model) refresh() {
 		m.habits, _ = m.hStore.List(false)
 	case TabTasks:
 		m.taskList, _ = m.tStore.ListTasks(tasks.Filter{})
+	case TabFinance:
+		now := time.Now()
+		m.transactions, _ = m.txnStore.List(transactions.Filter{
+			Year: now.Year(), Month: int(now.Month()),
+		})
 	case TabKnowledge:
 		m.docs, _ = m.kStore.List()
 	}
@@ -416,6 +495,8 @@ func (m *Model) renderSidebar(w, h int) string {
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.habits)))
 	case TabTasks:
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.taskList)))
+	case TabFinance:
+		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.transactions)))
 	case TabKnowledge:
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.docs)))
 	}
@@ -436,6 +517,10 @@ func (m *Model) renderHelp() string {
 			return style.Render(fmt.Sprintf(
 				"  enter confirm  │  esc cancel  │  tab freq [%s]  │  [/] target [%d]",
 				m.createFreq, m.createTarget))
+		case TabFinance:
+			return style.Render("  enter confirm  │  esc cancel  │  type +/−amt category")
+		case TabKnowledge:
+			return style.Render("  enter ingest URL  │  esc cancel")
 		default:
 			return style.Render("  enter confirm  │  esc cancel")
 		}
@@ -451,8 +536,10 @@ func (m *Model) renderHelp() string {
 		actions = "n new  │  +/− adjust  │  x meet target  │  b backfill  │  d delete"
 	case TabTasks:
 		actions = "n new  │  x complete  │  d delete"
+	case TabFinance:
+		actions = "n add  │  d delete"
 	case TabKnowledge:
-		actions = "enter view  │  d delete"
+		actions = "n ingest URL  │  enter view  │  d delete"
 	default:
 		actions = ""
 	}
@@ -476,9 +563,11 @@ func (m *Model) contentForTab(tab Tab) string {
 		sb.WriteString(m.renderHabits())
 	case TabTasks:
 		sb.WriteString(m.renderTasks())
+	case TabFinance:
+		sb.WriteString(m.renderFinance())
 	case TabKnowledge:
 		sb.WriteString(m.renderDocs())
-	case TabFinance, TabCalendar, TabChat:
+	case TabCalendar, TabChat:
 		sb.WriteString("Coming soon.\n")
 	}
 
@@ -490,10 +579,15 @@ func (m *Model) renderCreateForm(tab Tab) string {
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("New "+tab.String()[:len(tab.String())-1]) + "\n\n")
 	sb.WriteString(m.input.View() + "\n\n")
 
-	if tab == TabHabits {
+	switch tab {
+	case TabHabits:
 		acc := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
 		sb.WriteString("Frequency: " + acc.Render(m.createFreq) + " (tab to cycle)\n")
 		sb.WriteString("Target:    " + acc.Render(strconv.Itoa(m.createTarget)) + " ([ / ] to adjust)\n")
+	case TabFinance:
+		sb.WriteString("Format: +/−amount category   e.g. -12.50 lunch\n")
+	case TabKnowledge:
+		sb.WriteString("Paste a URL to ingest.\n")
 	}
 
 	return sb.String()
@@ -588,9 +682,55 @@ func (m *Model) renderTasks() string {
 	return sb.String()
 }
 
+func (m *Model) renderFinance() string {
+	if len(m.transactions) == 0 {
+		return "No transactions this month.\n\nPress 'n' to add one:  +/−amt category\n"
+	}
+
+	var sb strings.Builder
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	incomeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
+	expenseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cc7c7c"))
+
+	now := time.Now()
+	summary, _ := m.txnStore.MonthSummary(now.Year(), int(now.Month()))
+	if summary != nil {
+		balance := summary.Income - summary.Expense
+		sb.WriteString(fmt.Sprintf("  Income:   %s\n", incomeStyle.Render("$"+formatCents(summary.Income))))
+		sb.WriteString(fmt.Sprintf("  Expenses: %s\n", expenseStyle.Render("$"+formatCents(summary.Expense))))
+		balStyle := incomeStyle
+		if balance < 0 {
+			balStyle = expenseStyle
+		}
+		sb.WriteString(fmt.Sprintf("  Balance:  %s\n\n", balStyle.Render("$"+formatCents(balance))))
+	}
+
+	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
+
+	for i, tx := range m.transactions {
+		prefix := "  "
+		if i == m.selected {
+			prefix = selStyle.Render("▸ ")
+		}
+
+		amt := "$" + formatCents(tx.Amount)
+		amtStyle := expenseStyle
+		if tx.Type == "income" {
+			amtStyle = incomeStyle
+			amt = "+" + amt
+		} else {
+			amt = "-" + amt
+		}
+
+		sb.WriteString(fmt.Sprintf("%s%s %s  %s  %s\n",
+			prefix, dimStyle.Render(tx.Date), amtStyle.Render(amt), tx.Category, dimStyle.Render(tx.Description)))
+	}
+	return sb.String()
+}
+
 func (m *Model) renderDocs() string {
 	if len(m.docs) == 0 {
-		return "No documents yet.\n\nUse the TUI to ingest content. (Coming soon.)\n"
+		return "No documents yet.\n\nPress 'n' to ingest a URL.\n"
 	}
 
 	var sb strings.Builder
@@ -610,4 +750,48 @@ func (m *Model) renderDocs() string {
 	}
 	sb.WriteString("\n" + dimStyle.Render("enter to read  │  d to delete"))
 	return sb.String()
+}
+
+func formatCents(cents int64) string {
+	dollars := float64(cents) / 100.0
+	whole := int64(math.Abs(dollars))
+	frac := int64(math.Abs(dollars)*100) % 100
+	if cents < 0 {
+		return fmt.Sprintf("-%d.%02d", whole, frac)
+	}
+	return fmt.Sprintf("%d.%02d", whole, frac)
+}
+
+func parseTransaction(input string) (amount int64, category string, txType string) {
+	input = strings.TrimSpace(input)
+	txType = "expense"
+	if input == "" {
+		return 0, "other", txType
+	}
+
+	if input[0] == '+' {
+		txType = "income"
+		input = input[1:]
+	} else if input[0] == '-' {
+		input = input[1:]
+	}
+
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return 0, "other", txType
+	}
+
+	amountStr := parts[0]
+	category = "other"
+	if len(parts) > 1 {
+		category = strings.Join(parts[1:], " ")
+	}
+
+	dollars, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil {
+		return 0, category, txType
+	}
+
+	cents := int64(math.Round(math.Abs(dollars) * 100))
+	return cents, category, txType
 }
