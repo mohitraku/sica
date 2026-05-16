@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/mojitrk/sica"
 	"github.com/mojitrk/sica/internal/habits"
+	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/server/handler"
 	"github.com/mojitrk/sica/internal/server/middleware"
 	"github.com/mojitrk/sica/internal/store/sqlite"
@@ -15,9 +16,10 @@ import (
 )
 
 type Deps struct {
-	Store       *sqlite.Store
-	HabitsStore *habits.Store
-	TasksStore  *tasks.Store
+	Store          *sqlite.Store
+	HabitsStore    *habits.Store
+	TasksStore     *tasks.Store
+	KnowledgeStore *knowledge.Store
 }
 
 func staticFS() (http.FileSystem, error) {
@@ -45,6 +47,7 @@ func New(deps Deps) http.Handler {
 
 	hhabits := &handler.HabitsHandler{Store: deps.HabitsStore}
 	htasks := &handler.TasksHandler{Store: deps.TasksStore}
+	hknowledge := &handler.KnowledgeHandler{Store: deps.KnowledgeStore}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/habits", func(r chi.Router) {
@@ -90,10 +93,11 @@ func New(deps Deps) http.Handler {
 		})
 
 		r.Route("/knowledge", func(r chi.Router) {
-			r.Post("/ingest", placeholder("ingest url"))
-			r.Get("/search", placeholder("search knowledge"))
-			r.Get("/docs", placeholder("list docs"))
-			r.Get("/docs/{id}", placeholder("get doc"))
+			r.Post("/ingest", hknowledge.Ingest)
+				r.Get("/search", hknowledge.Search)
+				r.Get("/docs", hknowledge.Search)
+				r.Get("/docs/{id}", hknowledge.GetDoc)
+				r.Delete("/docs/{id}", hknowledge.Delete)
 		})
 
 		r.Route("/ai", func(r chi.Router) {
@@ -154,7 +158,14 @@ const indexHTML = `<!DOCTYPE html>
   </div>
   <div id="finance" class="tab" hidden><div class="placeholder">Finance — coming soon</div></div>
   <div id="calendar" class="tab" hidden><div class="placeholder">Calendar — coming soon</div></div>
-  <div id="knowledge" class="tab" hidden><div class="placeholder">Knowledge — coming soon</div></div>
+  <div id="knowledge" class="tab" hidden>
+	    <div id="knowledge-list"></div>
+	    <form id="ingest-form" class="inline-form" style="margin-top:1rem">
+	      <input name="url" type="url" placeholder="https://..." required>
+	      <input name="tags" placeholder="tags (comma sep)" style="max-width:160px">
+	      <button type="submit">Ingest</button>
+	    </form>
+	  </div>
   <div id="chat" class="tab" hidden><div class="placeholder">Chat — coming soon</div></div>
 </main>
 <script src="/static/js/app.js"></script>
@@ -168,6 +179,7 @@ document.querySelectorAll('nav a').forEach(a => {
     document.getElementById(a.dataset.tab).hidden = false;
     if (a.dataset.tab === 'habits') loadHabits();
     if (a.dataset.tab === 'tasks') loadTasks();
+    if (a.dataset.tab === 'knowledge') loadKnowledge();
   });
 });
 document.querySelector('nav a[data-tab="habits"]').classList.add('active');
@@ -238,8 +250,37 @@ document.getElementById('task-form').addEventListener('submit', async e => {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({title: fd.get('title'), priority: fd.get('priority')})
   });
+async function loadKnowledge() {
+  const res = await fetch('/api/knowledge/docs');
+  const docs = await res.json();
+  const el = document.getElementById('knowledge-list');
+  if (!docs || !docs.length) { el.innerHTML = '<div class="placeholder">No documents yet. Ingest a URL to get started.</div>'; return; }
+  el.innerHTML = docs.map(d => {
+    const tags = (d.tags||[]).join(', ');
+    return '<div class="card"><div class="card-row">' +
+      '<strong>' + d.title + '</strong>' +
+      (tags ? ' <span class="dim">[' + tags + ']</span>' : '') +
+      ' <button class="btn-sm" onclick="deleteDoc('+d.id+')">Del</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function deleteDoc(id) {
+  await fetch('/api/knowledge/docs/'+id, {method:'DELETE'});
+  loadKnowledge();
+}
+
+document.getElementById('ingest-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const tags = fd.get('tags') ? fd.get('tags').split(',').map(s => s.trim()).filter(Boolean) : [];
+  const res = await fetch('/api/knowledge/ingest', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({url: fd.get('url'), tags: tags})
+  });
   e.target.reset();
-  loadTasks();
+  loadKnowledge();
 });
 
 loadHabits();

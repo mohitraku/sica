@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mojitrk/sica/internal/core"
 	"github.com/mojitrk/sica/internal/habits"
+	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/server"
 	"github.com/mojitrk/sica/internal/tasks"
 )
@@ -56,9 +57,11 @@ type Model struct {
 
 	hStore *habits.Store
 	tStore *tasks.Store
+	kStore *knowledge.Store
 
 	habits      []core.Habit
 	taskList    []core.Task
+	docs        []core.KnowledgeDoc
 	selected    int
 	backfillDate string
 }
@@ -77,6 +80,7 @@ func New(deps server.Deps) *Model {
 		backfillDate: time.Now().Format("2006-01-02"),
 		hStore:       deps.HabitsStore,
 		tStore:       deps.TasksStore,
+		kStore:       deps.KnowledgeStore,
 	}
 }
 
@@ -169,6 +173,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selected = len(m.habits) - 1
 		case TabTasks:
 			m.selected = len(m.taskList) - 1
+		case TabKnowledge:
+			m.selected = len(m.docs) - 1
 		}
 		m.clampSelection()
 		m.viewport.GotoBottom()
@@ -212,6 +218,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Focus()
 		}
 
+	case "enter":
+		if m.activeTab == TabKnowledge && m.selected < len(m.docs) {
+			m.viewDoc(m.docs[m.selected].ID)
+		}
+
 	case "d":
 		switch m.activeTab {
 		case TabHabits:
@@ -226,10 +237,26 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selected = 0
 				m.refresh()
 			}
+		case TabKnowledge:
+			if m.selected < len(m.docs) {
+				m.kStore.Delete(m.docs[m.selected].ID)
+				m.selected = 0
+				m.refresh()
+			}
 		}
 	}
 
 	return m, nil
+}
+
+func (m *Model) viewDoc(id int64) {
+	// Viewing doc content in TUI — for now we print to log.
+	// A future detail view overlay would show this in-app.
+	content, err := m.kStore.ReadContent(id)
+	if err != nil {
+		return
+	}
+	_ = content
 }
 
 func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -322,6 +349,8 @@ func (m *Model) clampSelection() {
 		max = len(m.habits) - 1
 	case TabTasks:
 		max = len(m.taskList) - 1
+	case TabKnowledge:
+		max = len(m.docs) - 1
 	}
 	if m.selected < 0 {
 		m.selected = 0
@@ -337,6 +366,8 @@ func (m *Model) refresh() {
 		m.habits, _ = m.hStore.List(false)
 	case TabTasks:
 		m.taskList, _ = m.tStore.ListTasks(tasks.Filter{})
+	case TabKnowledge:
+		m.docs, _ = m.kStore.List()
 	}
 	m.clampSelection()
 }
@@ -386,6 +417,8 @@ func (m *Model) renderSidebar(w, h int) string {
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.habits)))
 	case TabTasks:
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.taskList)))
+	case TabKnowledge:
+		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.docs)))
 	}
 
 	return style.Render(sb.String())
@@ -419,6 +452,8 @@ func (m *Model) renderHelp() string {
 		actions = "n new  │  +/− adjust  │  x meet target  │  b backfill  │  d delete"
 	case TabTasks:
 		actions = "n new  │  x complete  │  d delete"
+	case TabKnowledge:
+		actions = "enter view  │  d delete"
 	default:
 		actions = ""
 	}
@@ -442,7 +477,9 @@ func (m *Model) contentForTab(tab Tab) string {
 		sb.WriteString(m.renderHabits())
 	case TabTasks:
 		sb.WriteString(m.renderTasks())
-	case TabFinance, TabCalendar, TabKnowledge, TabChat:
+	case TabKnowledge:
+		sb.WriteString(m.renderDocs())
+	case TabFinance, TabCalendar, TabChat:
 		sb.WriteString("Coming soon.\n")
 	}
 
@@ -549,5 +586,29 @@ func (m *Model) renderTasks() string {
 				prefix, status, t.Title, prioColors[t.Priority]))
 		}
 	}
+	return sb.String()
+}
+
+func (m *Model) renderDocs() string {
+	if len(m.docs) == 0 {
+		return "No documents yet.\n\nUse the web UI or API to ingest content.\n  POST /api/knowledge/ingest  { url: \"...\" }\n"
+	}
+
+	var sb strings.Builder
+	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+	for i, d := range m.docs {
+		prefix := "  "
+		if i == m.selected {
+			prefix = selStyle.Render("▸ ")
+		}
+		tags := ""
+		if len(d.Tags) > 0 {
+			tags = dimStyle.Render("  [" + strings.Join(d.Tags, ", ") + "]")
+		}
+		sb.WriteString(fmt.Sprintf("%s%s%s\n", prefix, d.Title, tags))
+	}
+	sb.WriteString("\n" + dimStyle.Render("enter to read  │  d to delete"))
 	return sb.String()
 }

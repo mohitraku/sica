@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mojitrk/sica/config"
 	"github.com/mojitrk/sica/internal/habits"
+	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/server"
 	"github.com/mojitrk/sica/internal/store/sqlite"
 	"github.com/mojitrk/sica/internal/tasks"
@@ -41,9 +42,10 @@ func main() {
 	log.Printf("database opened: %s", cfg.Database.Path)
 
 	deps := server.Deps{
-		Store:       store,
-		HabitsStore: habits.NewStore(store.DB),
-		TasksStore:  tasks.NewStore(store.DB),
+		Store:          store,
+		HabitsStore:    habits.NewStore(store.DB),
+		TasksStore:     tasks.NewStore(store.DB),
+		KnowledgeStore: knowledge.NewStore(store.DB, cfg.Knowledge.Path),
 	}
 
 	handler := server.New(deps)

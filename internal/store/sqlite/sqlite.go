@@ -147,6 +147,8 @@ func migrate(db *sql.DB) error {
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 
+		CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(title, content, tokenize='porter unicode61');
+
 		CREATE TABLE IF NOT EXISTS knowledge_chunks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			doc_id INTEGER NOT NULL REFERENCES knowledge_docs(id) ON DELETE CASCADE,
