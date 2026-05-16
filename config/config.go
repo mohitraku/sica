@@ -10,16 +10,10 @@ import (
 )
 
 type Config struct {
-	Server    serverConfig    `mapstructure:"server"`
 	Database  databaseConfig  `mapstructure:"database"`
 	Knowledge knowledgeConfig `mapstructure:"knowledge"`
 	AI        aiConfig        `mapstructure:"ai"`
 	Calendar  calendarConfig  `mapstructure:"calendar"`
-}
-
-type serverConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
 }
 
 type databaseConfig struct {
@@ -73,10 +67,6 @@ func SicaDir() string {
 func defaultConfig() *Config {
 	sicaDir := SicaDir()
 	return &Config{
-		Server: serverConfig{
-			Host: "127.0.0.1",
-			Port: 8420,
-		},
 		Database: databaseConfig{
 			Path: filepath.Join(sicaDir, "data.db"),
 		},
@@ -118,7 +108,6 @@ func Load() (*Config, error) {
 	v.SetConfigFile(configPath)
 	v.SetConfigType("yaml")
 
-	v.SetDefault("server", cfg.Server)
 	v.SetDefault("database", cfg.Database)
 	v.SetDefault("knowledge", cfg.Knowledge)
 	v.SetDefault("ai", cfg.AI)

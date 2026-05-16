@@ -13,7 +13,6 @@ import (
 	"github.com/mojitrk/sica/internal/core"
 	"github.com/mojitrk/sica/internal/habits"
 	"github.com/mojitrk/sica/internal/knowledge"
-	"github.com/mojitrk/sica/internal/server"
 	"github.com/mojitrk/sica/internal/tasks"
 )
 
@@ -66,7 +65,7 @@ type Model struct {
 	backfillDate string
 }
 
-func New(deps server.Deps) *Model {
+func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store) *Model {
 	ti := textinput.New()
 	ti.Placeholder = "Name..."
 	ti.CharLimit = 100
@@ -78,9 +77,9 @@ func New(deps server.Deps) *Model {
 		createFreq:   "daily",
 		createTarget: 1,
 		backfillDate: time.Now().Format("2006-01-02"),
-		hStore:       deps.HabitsStore,
-		tStore:       deps.TasksStore,
-		kStore:       deps.KnowledgeStore,
+		hStore:       hStore,
+		tStore:       tStore,
+		kStore:       kStore,
 	}
 }
 
@@ -591,7 +590,7 @@ func (m *Model) renderTasks() string {
 
 func (m *Model) renderDocs() string {
 	if len(m.docs) == 0 {
-		return "No documents yet.\n\nUse the web UI or API to ingest content.\n  POST /api/knowledge/ingest  { url: \"...\" }\n"
+		return "No documents yet.\n\nUse the TUI to ingest content. (Coming soon.)\n"
 	}
 
 	var sb strings.Builder
