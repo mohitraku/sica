@@ -118,9 +118,10 @@ type Model struct {
 	chatConvs    []core.Conversation
 	chatMsgs     []core.Message
 	chatConvID   int64
-	chatPending  bool
-	selected     int
-	backfillDate string
+	chatPending     bool
+	backfillActive  bool
+	selected        int
+	backfillDate    string
 }
 
 func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txnStore *transactions.Store, bStore *budgets.Store, cStore *calendar.Store, chStore *chat.Store, ollama *chat.Client) *Model {
@@ -164,6 +165,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case chatResponseMsg:
+		m.chatPending = false
+		if msg.err != nil {
+			log.Printf("chat error: %v", msg.err)
+		} else {
+			m.chatMsgs, _ = m.chStore.Messages(msg.convID)
+		}
+		m.refresh()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -192,7 +203,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) targetDate() string {
-	if m.mode == modeBackfill {
+	if m.backfillActive {
 		return m.backfillDate
 	}
 	return time.Now().Format("2006-01-02")
@@ -218,6 +229,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeTab = Tab(idx)
 		m.selected = 0
 		m.mode = modeList
+		m.backfillActive = false
 		m.input.Reset()
 		m.refresh()
 
@@ -225,12 +237,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeTab = (m.activeTab + 1) % numTabs
 		m.selected = 0
 		m.mode = modeList
+		m.backfillActive = false
 		m.refresh()
 
 	case "shift+tab":
 		m.activeTab = (m.activeTab - 1 + numTabs) % numTabs
 		m.selected = 0
 		m.mode = modeList
+		m.backfillActive = false
 		m.refresh()
 
 	case "j", "down":
@@ -256,6 +270,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selected = len(m.events) - 1
 		case TabKnowledge:
 			m.selected = len(m.docs) - 1
+		case TabChat:
+			if m.chatConvID > 0 {
+				m.selected = len(m.chatMsgs) - 1
+			} else {
+				m.selected = len(m.chatConvs) - 1
+			}
 		}
 		m.clampSelection()
 		m.viewport.GotoBottom()
@@ -310,8 +330,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "b":
 		if m.activeTab == TabHabits {
+			if m.backfillActive {
+				m.backfillActive = false
+				return m, nil
+			}
 			m.mode = modeBackfill
 			m.backfillDate = time.Now().Format("2006-01-02")
+			m.backfillActive = false
 			m.input.SetValue(m.backfillDate)
 			m.input.Focus()
 		}
@@ -414,8 +439,22 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "Name..."
 			m.refresh()
 			return m, nil
+		case TabCalendar:
+			title, start, end := parseCalendarEvent(val)
+			m.cStore.Create(&core.CalendarEvent{
+				Title: title, StartTime: start, EndTime: end,
+			})
+			m.mode = modeList
+			m.input.Reset()
+			m.input.Placeholder = "Name..."
+			m.refresh()
+			return m, nil
 		case TabChat:
-			id, _ := m.chStore.CreateConversation(val, m.ollama.Model)
+			id, err := m.chStore.CreateConversation(val, m.ollama.Model)
+			if err != nil {
+				log.Printf("create conversation: %v", err)
+				return m, nil
+			}
 			m.chatConvID = id
 			m.chatMsgs = nil
 			m.input.Placeholder = "Message..."
@@ -462,6 +501,7 @@ func (m *Model) handleBackfillKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
+		m.backfillActive = false
 		m.input.Reset()
 		m.input.Placeholder = "Name..."
 		m.backfillDate = time.Now().Format("2006-01-02")
@@ -472,6 +512,7 @@ func (m *Model) handleBackfillKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if val != "" {
 			if _, err := time.Parse("2006-01-02", val); err == nil {
 				m.backfillDate = val
+				m.backfillActive = true
 			}
 		}
 		m.mode = modeList
@@ -664,7 +705,7 @@ func (m *Model) renderHelp() string {
 	case TabFinance:
 		actions = "n add  │  d delete"
 	case TabKnowledge:
-		actions = "n ingest URL  │  enter view  │  d delete"
+		actions = "n ingest URL  │  d delete"
 	case TabChat:
 		if m.chatConvID > 0 {
 			actions = "esc back"
@@ -707,9 +748,27 @@ func (m *Model) contentForTab(tab Tab) string {
 	return sb.String()
 }
 
+func createLabel(tab Tab) string {
+	switch tab {
+	case TabHabits:
+		return "Habit"
+	case TabTasks:
+		return "Task"
+	case TabFinance:
+		return "Transaction"
+	case TabCalendar:
+		return "Event"
+	case TabKnowledge:
+		return "Document"
+	case TabChat:
+		return "Conversation"
+	}
+	return tab.String()
+}
+
 func (m *Model) renderCreateForm(tab Tab) string {
 	var sb strings.Builder
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("New "+tab.String()[:len(tab.String())-1]) + "\n\n")
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("New "+createLabel(tab)) + "\n\n")
 	sb.WriteString(m.input.View() + "\n\n")
 
 	switch tab {

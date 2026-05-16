@@ -116,16 +116,39 @@ func (s *Store) GetEntry(habitID int64, date string) (int, error) {
 }
 
 func (s *Store) IncrementEntry(habitID int64, date string, delta int) (int, error) {
-	current, err := s.GetEntry(habitID, date)
+	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("increment entry: %w", err)
 	}
+	defer tx.Rollback()
+
+	var current int
+	err = tx.QueryRow(
+		`SELECT value FROM habit_entries WHERE habit_id=? AND date=?`,
+		habitID, date,
+	).Scan(&current)
+	if err == sql.ErrNoRows {
+		current = 0
+	} else if err != nil {
+		return 0, fmt.Errorf("increment entry: %w", err)
+	}
+
 	newValue := current + delta
 	if newValue < 0 {
 		newValue = 0
 	}
-	if err := s.SetEntry(habitID, date, newValue, ""); err != nil {
+
+	_, err = tx.Exec(
+		`INSERT INTO habit_entries (habit_id, date, value, notes) VALUES (?, ?, ?, '')
+		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?, notes=''`,
+		habitID, date, newValue, newValue,
+	)
+	if err != nil {
 		return 0, fmt.Errorf("increment entry: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("increment entry commit: %w", err)
 	}
 	return newValue, nil
 }
@@ -196,14 +219,11 @@ func (s *Store) Stats(habitID int64) (*Stats, error) {
 	for {
 		if done, ok := dateHit[cursor]; ok && done {
 			current++
-		} else if cursor != today {
+		} else {
 			break
 		}
 		t, _ := time.Parse("2006-01-02", cursor)
 		cursor = t.AddDate(0, 0, -1).Format("2006-01-02")
-		if cursor < dates[len(dates)-1] {
-			break
-		}
 	}
 	stats.CurrentStreak = current
 
@@ -213,14 +233,21 @@ func (s *Store) Stats(habitID int64) (*Stats, error) {
 	for i, d := range dates {
 		sortDateAsc[len(dates)-1-i] = d
 	}
-	for _, d := range sortDateAsc {
-		if dateHit[d] {
-			run++
-			if run > longest {
-				longest = run
+	// Walk day-by-day from the earliest entry to today to catch gaps.
+	if len(sortDateAsc) > 0 {
+		cursor, _ := time.Parse("2006-01-02", sortDateAsc[0])
+		end, _ := time.Parse("2006-01-02", today)
+		for !cursor.After(end) {
+			ds := cursor.Format("2006-01-02")
+			if dateHit[ds] {
+				run++
+				if run > longest {
+					longest = run
+				}
+			} else {
+				run = 0
 			}
-		} else {
-			run = 0
+			cursor = cursor.AddDate(0, 0, 1)
 		}
 	}
 	stats.LongestStreak = longest

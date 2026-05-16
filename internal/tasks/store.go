@@ -56,10 +56,14 @@ type Filter struct {
 
 func (s *Store) CreateTask(t *core.Task) error {
 	t.CreatedAt = time.Now()
+	var dueDate interface{}
+	if t.DueDate != nil {
+		dueDate = *t.DueDate
+	}
 	result, err := s.db.Exec(
 		`INSERT INTO tasks (title, description, status, priority, due_date, project_id)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		t.Title, t.Description, t.Status, t.Priority, t.DueDate, t.ProjectID,
+		t.Title, t.Description, t.Status, t.Priority, dueDate, t.ProjectID,
 	)
 	if err != nil {
 		return err
@@ -151,10 +155,14 @@ func (s *Store) ListTasks(f Filter) ([]core.Task, error) {
 }
 
 func (s *Store) UpdateTask(t *core.Task) error {
+	var dueDate interface{}
+	if t.DueDate != nil {
+		dueDate = *t.DueDate
+	}
 	_, err := s.db.Exec(
 		`UPDATE tasks SET title=?, description=?, status=?, priority=?, due_date=?, project_id=?
 		 WHERE id=?`,
-		t.Title, t.Description, t.Status, t.Priority, t.DueDate, t.ProjectID, t.ID,
+		t.Title, t.Description, t.Status, t.Priority, dueDate, t.ProjectID, t.ID,
 	)
 	return err
 }

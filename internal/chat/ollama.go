@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Message struct {
@@ -39,7 +40,7 @@ func NewClient(host, model string) *Client {
 	return &Client{
 		host:  strings.TrimRight(host, "/"),
 		Model: model,
-		hc:    &http.Client{},
+		hc:    &http.Client{Timeout: 120 * time.Second},
 	}
 }
 

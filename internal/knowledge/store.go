@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,9 @@ type frontmatter struct {
 }
 
 func NewStore(db *sql.DB, baseDir string) *Store {
-	os.MkdirAll(baseDir, 0755)
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		panic(fmt.Sprintf("create knowledge dir %s: %v", baseDir, err))
+	}
 	return &Store{db: db, baseDir: baseDir}
 }
 
@@ -70,9 +73,18 @@ func (s *Store) Save(title, body, sourceURL string, tags []string) (*core.Knowle
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
-	tagJSON, _ := json.Marshal(tags)
+	tagJSON, err := json.Marshal(tags)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tags: %w", err)
+	}
 
-	result, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(
 		`INSERT INTO knowledge_docs (file_path, title, source_url, tags) VALUES (?, ?, ?, ?)`,
 		relPath, title, sourceURL, string(tagJSON),
 	)
@@ -80,12 +92,21 @@ func (s *Store) Save(title, body, sourceURL string, tags []string) (*core.Knowle
 		return nil, fmt.Errorf("insert doc: %w", err)
 	}
 
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("last insert id: %w", err)
+	}
 
-	s.db.Exec(
+	if _, err := tx.Exec(
 		`INSERT INTO knowledge_fts (rowid, title, content) VALUES (?, ?, ?)`,
 		id, title, body,
-	)
+	); err != nil {
+		return nil, fmt.Errorf("insert fts: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
 
 	return &core.KnowledgeDoc{
 		ID:        id,
@@ -164,13 +185,32 @@ func (s *Store) Search(query string) ([]core.KnowledgeDoc, error) {
 func (s *Store) Delete(id int64) error {
 	doc, err := s.Get(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("get doc for delete: %w", err)
 	}
-	if doc != nil {
-		os.Remove(filepath.Join(s.baseDir, doc.FilePath))
+	if doc == nil {
+		return nil
 	}
-	s.db.Exec(`DELETE FROM knowledge_fts WHERE rowid=?`, id)
-	s.db.Exec(`DELETE FROM knowledge_docs WHERE id=?`, id)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM knowledge_fts WHERE rowid=?`, id); err != nil {
+		return fmt.Errorf("delete fts: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM knowledge_docs WHERE id=?`, id); err != nil {
+		return fmt.Errorf("delete doc: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete: %w", err)
+	}
+
+	if err := os.Remove(filepath.Join(s.baseDir, doc.FilePath)); err != nil && !os.IsNotExist(err) {
+		log.Printf("remove knowledge file: %v", err)
+	}
 	return nil
 }
 
