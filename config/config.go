@@ -50,7 +50,7 @@ func defaultConfig() *Config {
 		AI: aiConfig{
 			Ollama: ollamaConfig{
 				Host:  "http://localhost:11434",
-				Model: "qwen2.5:7b",
+				Model: "llama3.1:8b",
 			},
 			DeepSeek: deepseekConfig{
 				Model: "deepseek-chat",

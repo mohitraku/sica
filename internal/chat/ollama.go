@@ -36,6 +36,7 @@ type chatRequest struct {
 	Messages []Message        `json:"messages"`
 	Stream   bool             `json:"stream"`
 	Tools    []map[string]any `json:"tools,omitempty"`
+	Options  map[string]any   `json:"options,omitempty"`
 }
 
 type chatResponse struct {
@@ -66,6 +67,7 @@ func (c *Client) Chat(messages []Message) (string, error) {
 		Model:    c.Model,
 		Messages: messages,
 		Stream:   false,
+		Options:  map[string]any{"num_ctx": 16384},
 	}
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -96,6 +98,7 @@ func (c *Client) ChatStream(messages []Message, tools []map[string]any, onEvent 
 		Messages: messages,
 		Stream:   true,
 		Tools:    tools,
+		Options:  map[string]any{"num_ctx": 16384},
 	}
 	b, err := json.Marshal(body)
 	if err != nil {

@@ -37,15 +37,14 @@ func New(backend chat.Backend, store *chat.Store, registry *Registry, convID int
 func SystemPrompt() chat.Message {
 	return chat.Message{
 		Role: "system",
-		Content: fmt.Sprintf(`You are an AI assistant for sica, a personal productivity application. You help users manage their habits and tasks.
+		Content: fmt.Sprintf(`You are an AI assistant for sica, a personal habit-tracking application. You help users manage their habits.
 
 You have access to tools that let you query and modify the user's data. When you need information or need to make changes, use the appropriate tool. Always explain what you're doing in a friendly, concise way.
 
 Today's date is %s.
 
 When presenting data:
-- For habits, show current streaks and today's progress
-- For tasks, indicate priority (high/med/low) and status (todo/done)
+- Show current streaks and today's progress for each habit
 - Include IDs in tool results so you can reference them in follow-up calls
 - Format dates as YYYY-MM-DD
 
@@ -105,7 +104,7 @@ func (a *Agent) RunStream(cb Callbacks) (string, error) {
 		}
 
 		if fullContent.Len() == 0 && len(toolCalls) == 0 {
-			fullContent.WriteString("(no response)")
+			fullContent.WriteString("No response from model — it may not support tool calling. Try a model with native tool support (llama3.2, mistral, etc.).")
 		}
 
 		var toolCallsJSON string

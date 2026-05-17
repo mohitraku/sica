@@ -11,7 +11,6 @@ import (
 	"github.com/mojitrk/sica/internal/chat"
 	"github.com/mojitrk/sica/internal/habits"
 	"github.com/mojitrk/sica/internal/store/sqlite"
-	"github.com/mojitrk/sica/internal/tasks"
 	"github.com/mojitrk/sica/internal/tui"
 )
 
@@ -38,17 +37,15 @@ func main() {
 	log.Printf("database opened: %s", cfg.Database.Path)
 
 	hStore := habits.NewStore(store.DB)
-	tStore := tasks.NewStore(store.DB)
 	chStore := chat.NewStore(store.DB)
 	ollamaClient := chat.NewClient(cfg.AI.Ollama.Host, cfg.AI.Ollama.Model)
 	deepseekClient := chat.NewDeepSeekClient(cfg.AI.DeepSeek.APIKey, cfg.AI.DeepSeek.Model)
 
 	reg := agent.NewRegistry()
-	agent.RegisterAll(reg, hStore, tStore)
+	agent.RegisterAll(reg, hStore)
 
 	model := tui.New(tui.NewParams{
 		HStore:   hStore,
-		TStore:   tStore,
 		ChStore:  chStore,
 		Ollama:   ollamaClient,
 		DeepSeek: deepseekClient,
