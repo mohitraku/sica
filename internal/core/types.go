@@ -4,24 +4,20 @@ import "time"
 
 // Habit models a recurring habit.
 type Habit struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Frequency   string     `json:"frequency"`
-	TargetValue int        `json:"target_value"`
-	Color       string     `json:"color,omitempty"`
-	Icon        string     `json:"icon,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	Frequency    string    `json:"frequency"`
+	TargetValue  int       `json:"target_value"`
+	QuantityType string    `json:"quantity_type"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // HabitEntry records a single completion of a habit.
 type HabitEntry struct {
-	ID      int64     `json:"id"`
-	HabitID int64     `json:"habit_id"`
-	Date    string    `json:"date"`
-	Value   int       `json:"value"`
-	Notes   string    `json:"notes,omitempty"`
+	ID      int64  `json:"id"`
+	HabitID int64  `json:"habit_id"`
+	Date    string `json:"date"`
+	Value   int    `json:"value"`
 }
 
 // Task models a to-do item.

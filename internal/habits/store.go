@@ -17,6 +17,12 @@ func NewStore(db *sql.DB) *Store {
 }
 
 func (s *Store) Create(h *core.Habit) error {
+	if h.QuantityType == "" {
+		h.QuantityType = "count"
+	}
+	if h.QuantityType == "binary" {
+		h.TargetValue = 1
+	}
 	if h.TargetValue <= 0 {
 		h.TargetValue = 1
 	}
@@ -25,8 +31,8 @@ func (s *Store) Create(h *core.Habit) error {
 	}
 	h.CreatedAt = time.Now()
 	result, err := s.db.Exec(
-		`INSERT INTO habits (name, description, frequency, target_value, color, icon) VALUES (?, ?, ?, ?, ?, ?)`,
-		h.Name, h.Description, h.Frequency, h.TargetValue, h.Color, h.Icon,
+		`INSERT INTO habits (name, frequency, target_value, quantity_type) VALUES (?, ?, ?, ?)`,
+		h.Name, h.Frequency, h.TargetValue, h.QuantityType,
 	)
 	if err != nil {
 		return err
@@ -40,9 +46,9 @@ func (s *Store) Get(id int64) (*core.Habit, error) {
 	h := &core.Habit{}
 	var createdAt string
 	err := s.db.QueryRow(
-		`SELECT id, name, description, frequency, target_value, color, icon, created_at
-		 FROM habits WHERE id=? AND archived_at IS NULL`, id,
-	).Scan(&h.ID, &h.Name, &h.Description, &h.Frequency, &h.TargetValue, &h.Color, &h.Icon, &createdAt)
+		`SELECT id, name, frequency, target_value, quantity_type, created_at
+		 FROM habits WHERE id=?`, id,
+	).Scan(&h.ID, &h.Name, &h.Frequency, &h.TargetValue, &h.QuantityType, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -50,12 +56,8 @@ func (s *Store) Get(id int64) (*core.Habit, error) {
 	return h, err
 }
 
-func (s *Store) List(includeArchived bool) ([]core.Habit, error) {
-	query := `SELECT id, name, description, frequency, target_value, color, icon, created_at FROM habits`
-	if !includeArchived {
-		query += ` WHERE archived_at IS NULL`
-	}
-	query += ` ORDER BY created_at DESC`
+func (s *Store) List() ([]core.Habit, error) {
+	query := `SELECT id, name, frequency, target_value, quantity_type, created_at FROM habits ORDER BY created_at DESC`
 
 	rows, err := s.db.Query(query)
 	if err != nil {
@@ -67,7 +69,7 @@ func (s *Store) List(includeArchived bool) ([]core.Habit, error) {
 	for rows.Next() {
 		var h core.Habit
 		var createdAt string
-		if err := rows.Scan(&h.ID, &h.Name, &h.Description, &h.Frequency, &h.TargetValue, &h.Color, &h.Icon, &createdAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Frequency, &h.TargetValue, &h.QuantityType, &createdAt); err != nil {
 			return nil, err
 		}
 		h.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -77,15 +79,13 @@ func (s *Store) List(includeArchived bool) ([]core.Habit, error) {
 }
 
 func (s *Store) Update(h *core.Habit) error {
+	if h.QuantityType == "binary" {
+		h.TargetValue = 1
+	}
 	_, err := s.db.Exec(
-		`UPDATE habits SET name=?, description=?, frequency=?, target_value=?, color=?, icon=? WHERE id=?`,
-		h.Name, h.Description, h.Frequency, h.TargetValue, h.Color, h.Icon, h.ID,
+		`UPDATE habits SET name=?, frequency=?, target_value=?, quantity_type=? WHERE id=?`,
+		h.Name, h.Frequency, h.TargetValue, h.QuantityType, h.ID,
 	)
-	return err
-}
-
-func (s *Store) Archive(id int64) error {
-	_, err := s.db.Exec(`UPDATE habits SET archived_at=datetime('now') WHERE id=?`, id)
 	return err
 }
 
@@ -94,11 +94,11 @@ func (s *Store) Delete(id int64) error {
 	return err
 }
 
-func (s *Store) SetEntry(habitID int64, date string, value int, notes string) error {
+func (s *Store) SetEntry(habitID int64, date string, value int) error {
 	_, err := s.db.Exec(
-		`INSERT INTO habit_entries (habit_id, date, value, notes) VALUES (?, ?, ?, ?)
-		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?, notes=?`,
-		habitID, date, value, notes, value, notes,
+		`INSERT INTO habit_entries (habit_id, date, value) VALUES (?, ?, ?)
+		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?`,
+		habitID, date, value, value,
 	)
 	return err
 }
@@ -139,8 +139,8 @@ func (s *Store) IncrementEntry(habitID int64, date string, delta int) (int, erro
 	}
 
 	_, err = tx.Exec(
-		`INSERT INTO habit_entries (habit_id, date, value, notes) VALUES (?, ?, ?, '')
-		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?, notes=''`,
+		`INSERT INTO habit_entries (habit_id, date, value) VALUES (?, ?, ?)
+		 ON CONFLICT(habit_id, date) DO UPDATE SET value=?`,
 		habitID, date, newValue, newValue,
 	)
 	if err != nil {
@@ -207,11 +207,15 @@ func (s *Store) Stats(habitID int64) (*Stats, error) {
 
 	today := time.Now().Format("2006-01-02")
 	stats.TodayValue = dateValues[today]
-	stats.TodayDone = stats.TodayValue >= h.TargetValue
+	targetForDone := h.TargetValue
+	if h.QuantityType == "binary" {
+		targetForDone = 1
+	}
+	stats.TodayDone = stats.TodayValue >= targetForDone
 
 	dateHit := make(map[string]bool, len(dates))
 	for _, d := range dates {
-		dateHit[d] = dateValues[d] >= h.TargetValue
+		dateHit[d] = dateValues[d] >= targetForDone
 	}
 
 	current := 0

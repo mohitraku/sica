@@ -26,7 +26,7 @@ func TestCreateAndListHabits(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	habits, err := s.List(false)
+	habits, err := s.List()
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -38,27 +38,37 @@ func TestCreateAndListHabits(t *testing.T) {
 	}
 }
 
-func TestArchiveHidesHabit(t *testing.T) {
+func TestQuantityTypeDefaults(t *testing.T) {
 	s := setup(t)
-	s.Create(&core.Habit{Name: "Read", Frequency: "daily"})
-	habits, _ := s.List(false)
-	id := habits[0].ID
 
-	s.Archive(id)
-	habits, _ = s.List(false)
-	if len(habits) != 0 {
-		t.Errorf("expected 0 active habits, got %d", len(habits))
+	s.Create(&core.Habit{Name: "Test", Frequency: "daily"})
+	habits, _ := s.List()
+	if habits[0].QuantityType != "count" {
+		t.Errorf("expected default quantity_type 'count', got '%s'", habits[0].QuantityType)
+	}
+
+	s.Create(&core.Habit{Name: "BinHabit", Frequency: "daily", QuantityType: "binary", TargetValue: 5})
+	habits, _ = s.List()
+	for _, h := range habits {
+		if h.Name == "BinHabit" {
+			if h.TargetValue != 1 {
+				t.Errorf("binary habit should force TargetValue=1, got %d", h.TargetValue)
+			}
+			if h.QuantityType != "binary" {
+				t.Errorf("expected 'binary', got '%s'", h.QuantityType)
+			}
+		}
 	}
 }
 
 func TestAddEntryAndStats(t *testing.T) {
 	s := setup(t)
 	s.Create(&core.Habit{Name: "Meditate", Frequency: "daily"})
-	habits, _ := s.List(false)
+	habits, _ := s.List()
 	id := habits[0].ID
 
 	today := time.Now().Format("2006-01-02")
-	s.SetEntry(id, today, 1, "")
+	s.SetEntry(id, today, 1)
 
 	stats, err := s.Stats(id)
 	if err != nil {
@@ -78,7 +88,7 @@ func TestAddEntryAndStats(t *testing.T) {
 func TestTargetValueAndIncrement(t *testing.T) {
 	s := setup(t)
 	s.Create(&core.Habit{Name: "Water", Frequency: "daily", TargetValue: 8})
-	habits, _ := s.List(false)
+	habits, _ := s.List()
 	id := habits[0].ID
 
 	today := time.Now().Format("2006-01-02")
@@ -115,7 +125,7 @@ func TestTargetValueAndIncrement(t *testing.T) {
 		t.Error("should not be done yet (2/8)")
 	}
 
-	s.SetEntry(id, today, 8, "")
+	s.SetEntry(id, today, 8)
 	stats, _ = s.Stats(id)
 	if !stats.TodayDone {
 		t.Error("should be done now (8/8)")
@@ -125,11 +135,11 @@ func TestTargetValueAndIncrement(t *testing.T) {
 func TestBackfillEntry(t *testing.T) {
 	s := setup(t)
 	s.Create(&core.Habit{Name: "Read", Frequency: "daily", TargetValue: 1})
-	habits, _ := s.List(false)
+	habits, _ := s.List()
 	id := habits[0].ID
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	s.SetEntry(id, yesterday, 1, "")
+	s.SetEntry(id, yesterday, 1)
 
 	val, _ := s.GetEntry(id, yesterday)
 	if val != 1 {
@@ -140,9 +150,9 @@ func TestBackfillEntry(t *testing.T) {
 func TestDeleteHabit(t *testing.T) {
 	s := setup(t)
 	s.Create(&core.Habit{Name: "Delete me", Frequency: "daily"})
-	habits, _ := s.List(false)
+	habits, _ := s.List()
 	s.Delete(habits[0].ID)
-	habits, _ = s.List(false)
+	habits, _ = s.List()
 	if len(habits) != 0 {
 		t.Errorf("expected 0 habits after delete, got %d", len(habits))
 	}

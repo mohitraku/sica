@@ -114,6 +114,7 @@ func migrate(db *sql.DB) error {
 	// Migration: add target_value for databases created before the column existed.
 	// "duplicate column" error on fresh databases is expected and ignored.
 	_, _ = db.Exec(`ALTER TABLE habits ADD COLUMN target_value INTEGER NOT NULL DEFAULT 1`)
+	_, _ = db.Exec(`ALTER TABLE habits ADD COLUMN quantity_type TEXT NOT NULL DEFAULT 'count'`)
 
 	return err
 }

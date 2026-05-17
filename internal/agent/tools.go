@@ -24,7 +24,7 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 			Parameters:  json.RawMessage(`{"type":"object","properties":{},"required":[]}`),
 		},
 		Fn: func(args json.RawMessage) (string, error) {
-			hh, err := s.List(false)
+			hh, err := s.List()
 			if err != nil {
 				return "", err
 			}
@@ -76,8 +76,8 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 				todayVal = stats.TodayValue
 				total = stats.TotalEntries
 			}
-			return fmt.Sprintf("%s (id=%d)\n  Description: %s\n  Frequency: %s\n  Target: %d\n  Progress today: %d/%d\n  Current streak: %d days\n  Longest streak: %d days\n  Total entries: %d",
-				h.Name, h.ID, h.Description, h.Frequency, h.TargetValue,
+			return fmt.Sprintf("%s (id=%d)\n  Frequency: %s\n  Target: %d\n  Quantity type: %s\n  Progress today: %d/%d\n  Current streak: %d days\n  Longest streak: %d days\n  Total entries: %d",
+				h.Name, h.ID, h.Frequency, h.TargetValue, h.QuantityType,
 				todayVal, h.TargetValue, streak, longest, total), nil
 		},
 	})
@@ -90,15 +90,15 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 				"name":{"type":"string","description":"Name of the habit"},
 				"frequency":{"type":"string","description":"daily, weekly, or monthly"},
 				"target_value":{"type":"integer","description":"Target number per period, default 1"},
-				"description":{"type":"string","description":"Optional description"}
+				"quantity_type":{"type":"string","description":"binary, count, or duration, default count"}
 			},"required":["name"]}`),
 		},
 		Fn: func(args json.RawMessage) (string, error) {
 			var p struct {
-				Name        string `json:"name"`
-				Frequency   string `json:"frequency"`
-				TargetValue int    `json:"target_value"`
-				Description string `json:"description"`
+				Name         string `json:"name"`
+				Frequency    string `json:"frequency"`
+				TargetValue  int    `json:"target_value"`
+				QuantityType string `json:"quantity_type"`
 			}
 			if err := json.Unmarshal(args, &p); err != nil {
 				return "", fmt.Errorf("invalid arguments: %w", err)
@@ -110,15 +110,15 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 				p.Frequency = "daily"
 			}
 			h := &core.Habit{
-				Name:        p.Name,
-				Frequency:   p.Frequency,
-				TargetValue: p.TargetValue,
-				Description: p.Description,
+				Name:         p.Name,
+				Frequency:    p.Frequency,
+				TargetValue:  p.TargetValue,
+				QuantityType: p.QuantityType,
 			}
 			if err := s.Create(h); err != nil {
 				return "", fmt.Errorf("create habit: %w", err)
 			}
-			return fmt.Sprintf("Created habit \"%s\" (id=%d, frequency=%s, target=%d).", h.Name, h.ID, h.Frequency, h.TargetValue), nil
+			return fmt.Sprintf("Created habit \"%s\" (id=%d, frequency=%s, target=%d, type=%s).", h.Name, h.ID, h.Frequency, h.TargetValue, h.QuantityType), nil
 		},
 	})
 
@@ -147,7 +147,7 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 			if p.Value <= 0 {
 				p.Value = 1
 			}
-			if err := s.SetEntry(p.ID, p.Date, p.Value, ""); err != nil {
+			if err := s.SetEntry(p.ID, p.Date, p.Value); err != nil {
 				return "", fmt.Errorf("log habit: %w", err)
 			}
 			return fmt.Sprintf("Logged %d for habit %d on %s.", p.Value, p.ID, p.Date), nil
@@ -169,6 +169,55 @@ func registerHabitTools(r *Registry, s *habits.Store) {
 				return "", fmt.Errorf("delete habit: %w", err)
 			}
 			return fmt.Sprintf("Deleted habit %d.", p.ID), nil
+		},
+	})
+
+	r.Register(Tool{
+		Definition: ToolDefinition{
+			Name:        "update_habit",
+			Description: "Update a habit's fields. Only specify the fields you want to change.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{
+				"id":{"type":"integer","description":"Habit ID"},
+				"name":{"type":"string","description":"New name"},
+				"frequency":{"type":"string","description":"daily, weekly, or monthly"},
+				"target_value":{"type":"integer","description":"New target per period"},
+				"quantity_type":{"type":"string","description":"binary, count, or duration"}
+			},"required":["id"]}`),
+		},
+		Fn: func(args json.RawMessage) (string, error) {
+			var p struct {
+				ID           int64  `json:"id"`
+				Name         string `json:"name"`
+				Frequency    string `json:"frequency"`
+				TargetValue  int    `json:"target_value"`
+				QuantityType string `json:"quantity_type"`
+			}
+			if err := json.Unmarshal(args, &p); err != nil {
+				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			h, err := s.Get(p.ID)
+			if err != nil {
+				return "", err
+			}
+			if h == nil {
+				return fmt.Sprintf("Habit %d not found.", p.ID), nil
+			}
+			if p.Name != "" {
+				h.Name = p.Name
+			}
+			if p.Frequency != "" {
+				h.Frequency = p.Frequency
+			}
+			if p.TargetValue > 0 {
+				h.TargetValue = p.TargetValue
+			}
+			if p.QuantityType != "" {
+				h.QuantityType = p.QuantityType
+			}
+			if err := s.Update(h); err != nil {
+				return "", fmt.Errorf("update habit: %w", err)
+			}
+			return fmt.Sprintf("Updated habit \"%s\" (id=%d).", h.Name, h.ID), nil
 		},
 	})
 }
