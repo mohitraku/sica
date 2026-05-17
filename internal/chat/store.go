@@ -61,10 +61,14 @@ func (s *Store) DeleteConversation(id int64) error {
 	return err
 }
 
-func (s *Store) AddMessage(convID int64, role, content string) (int64, error) {
+func (s *Store) AddMessage(convID int64, role, content string, toolCalls ...string) (int64, error) {
+	tc := ""
+	if len(toolCalls) > 0 {
+		tc = toolCalls[0]
+	}
 	result, err := s.db.Exec(
-		`INSERT INTO ai_messages (conversation_id, role, content) VALUES (?, ?, ?)`,
-		convID, role, content,
+		`INSERT INTO ai_messages (conversation_id, role, content, tool_calls) VALUES (?, ?, ?, ?)`,
+		convID, role, content, tc,
 	)
 	if err != nil {
 		return 0, err

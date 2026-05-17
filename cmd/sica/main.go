@@ -7,14 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mojitrk/sica/config"
+	"github.com/mojitrk/sica/internal/agent"
+	"github.com/mojitrk/sica/internal/chat"
 	"github.com/mojitrk/sica/internal/habits"
-	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/store/sqlite"
 	"github.com/mojitrk/sica/internal/tasks"
-	"github.com/mojitrk/sica/internal/calendar"
-	"github.com/mojitrk/sica/internal/budgets"
-	"github.com/mojitrk/sica/internal/chat"
-	"github.com/mojitrk/sica/internal/transactions"
 	"github.com/mojitrk/sica/internal/tui"
 )
 
@@ -42,14 +39,24 @@ func main() {
 
 	hStore := habits.NewStore(store.DB)
 	tStore := tasks.NewStore(store.DB)
-	kStore := knowledge.NewStore(store.DB, cfg.Knowledge.Path)
-	cStore := calendar.NewStore(store.DB)
-	bStore := budgets.NewStore(store.DB)
-	txnStore := transactions.NewStore(store.DB)
 	chStore := chat.NewStore(store.DB)
 	ollamaClient := chat.NewClient(cfg.AI.Ollama.Host, cfg.AI.Ollama.Model)
+	deepseekClient := chat.NewDeepSeekClient(cfg.AI.DeepSeek.APIKey, cfg.AI.DeepSeek.Model)
 
-	p := tea.NewProgram(tui.New(hStore, tStore, kStore, txnStore, bStore, cStore, chStore, ollamaClient), tea.WithAltScreen())
+	reg := agent.NewRegistry()
+	agent.RegisterAll(reg, hStore, tStore)
+
+	model := tui.New(tui.NewParams{
+		HStore:   hStore,
+		TStore:   tStore,
+		ChStore:  chStore,
+		Ollama:   ollamaClient,
+		DeepSeek: deepseekClient,
+		Registry: reg,
+	})
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	model.SetProgram(p)
+
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("tui error: %v", err)
 	}

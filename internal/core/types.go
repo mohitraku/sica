@@ -46,50 +46,6 @@ type Project struct {
 	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
 }
 
-// Transaction is a financial transaction.
-type Transaction struct {
-	ID          int64     `json:"id"`
-	Amount      int64     `json:"amount"`
-	Type        string    `json:"type"`
-	Category    string    `json:"category"`
-	Description string    `json:"description,omitempty"`
-	Date        string    `json:"date"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// Budget tracks spending limits per category.
-type Budget struct {
-	ID          int64     `json:"id"`
-	Category    string    `json:"category"`
-	AmountCents int64     `json:"amount_cents"`
-	Period      string    `json:"period"`
-	StartDate   string    `json:"start_date"`
-}
-
-// CalendarEvent is a calendar entry, local or synced from Outlook.
-type CalendarEvent struct {
-	ID           int64     `json:"id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description,omitempty"`
-	Location     string    `json:"location,omitempty"`
-	StartTime    time.Time `json:"start_time"`
-	EndTime      time.Time `json:"end_time"`
-	Source       string    `json:"source"`
-	OutlookID    string    `json:"outlook_id,omitempty"`
-	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
-}
-
-// KnowledgeDoc is metadata for a stored document.
-type KnowledgeDoc struct {
-	ID        int64     `json:"id"`
-	FilePath  string    `json:"file_path"`
-	Title     string    `json:"title"`
-	SourceURL string    `json:"source_url,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // Conversation is an AI chat session.
 type Conversation struct {
 	ID        int64     `json:"id"`

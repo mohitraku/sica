@@ -91,36 +91,6 @@ func migrate(db *sql.DB) error {
 			completed_at TEXT
 		);
 
-		CREATE TABLE IF NOT EXISTS transactions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			amount INTEGER NOT NULL,
-			type TEXT NOT NULL DEFAULT 'expense',
-			category TEXT NOT NULL DEFAULT 'other',
-			description TEXT DEFAULT '',
-			date TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
-		);
-
-		CREATE TABLE IF NOT EXISTS budgets (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			category TEXT NOT NULL,
-			amount_cents INTEGER NOT NULL,
-			period TEXT NOT NULL DEFAULT 'monthly',
-			start_date TEXT NOT NULL
-		);
-
-		CREATE TABLE IF NOT EXISTS calendar_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			title TEXT NOT NULL,
-			description TEXT DEFAULT '',
-			location TEXT DEFAULT '',
-			start_time TEXT NOT NULL,
-			end_time TEXT NOT NULL,
-			source TEXT NOT NULL DEFAULT 'local',
-			outlook_id TEXT DEFAULT '',
-			last_synced_at TEXT
-		);
-
 		CREATE TABLE IF NOT EXISTS ai_conversations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			title TEXT NOT NULL DEFAULT 'New conversation',
@@ -137,22 +107,8 @@ func migrate(db *sql.DB) error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 
-		CREATE TABLE IF NOT EXISTS knowledge_docs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			file_path TEXT NOT NULL UNIQUE,
-			title TEXT NOT NULL DEFAULT '',
-			source_url TEXT DEFAULT '',
-			tags TEXT DEFAULT '[]',
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		);
-
-		CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(title, content, tokenize='porter unicode61');
-
 		CREATE INDEX IF NOT EXISTS idx_habit_entries_date ON habit_entries(date);
 		CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-		CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-		CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_time);
 	`)
 
 	// Migration: add target_value for databases created before the column existed.

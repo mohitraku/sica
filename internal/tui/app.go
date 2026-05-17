@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"log"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -12,55 +11,24 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mojitrk/sica/internal/agent"
+	"github.com/mojitrk/sica/internal/chat"
 	"github.com/mojitrk/sica/internal/core"
 	"github.com/mojitrk/sica/internal/habits"
-	"github.com/mojitrk/sica/internal/knowledge"
 	"github.com/mojitrk/sica/internal/tasks"
-	"github.com/mojitrk/sica/internal/calendar"
-	"github.com/mojitrk/sica/internal/budgets"
-	"github.com/mojitrk/sica/internal/chat"
-	"github.com/mojitrk/sica/internal/transactions"
 )
 
-type ingestMsg struct {
+type chatStreamChunkMsg struct {
+	content string
+}
+
+type chatToolStatusMsg struct {
+	status string
+	tool   string
+}
+
+type chatStreamDoneMsg struct {
 	err error
-	doc *core.KnowledgeDoc
-}
-
-func ingestURL(kStore *knowledge.Store, rawURL string) tea.Cmd {
-	return func() tea.Msg {
-		result, err := knowledge.IngestURL(rawURL)
-		if err != nil {
-			return ingestMsg{err: err}
-		}
-		doc, err := kStore.Save(result.Title, result.Body, result.SourceURL, nil)
-		if err != nil {
-			return ingestMsg{err: err}
-		}
-		return ingestMsg{doc: doc}
-	}
-}
-
-type chatResponseMsg struct {
-	err    error
-	convID int64
-}
-
-func sendChat(chStore *chat.Store, ollama *chat.Client, convID int64, history []core.Message, userMsg string) tea.Cmd {
-	return func() tea.Msg {
-		chStore.AddMessage(convID, "user", userMsg)
-		msgs := make([]chat.Message, 0, len(history)+1)
-		for _, m := range history {
-			msgs = append(msgs, chat.Message{Role: m.Role, Content: m.Content})
-		}
-		msgs = append(msgs, chat.Message{Role: "user", Content: userMsg})
-		response, err := ollama.Chat(msgs)
-		if err != nil {
-			return chatResponseMsg{err: err, convID: convID}
-		}
-		chStore.AddMessage(convID, "assistant", response)
-		return chatResponseMsg{convID: convID}
-	}
 }
 
 type Tab int
@@ -68,83 +36,98 @@ type Tab int
 const (
 	TabHabits Tab = iota
 	TabTasks
-	TabFinance
-	TabCalendar
-	TabKnowledge
-	TabChat
 )
 
 func (t Tab) String() string {
-	return []string{"Habits", "Tasks", "Finance", "Calendar", "Knowledge", "Chat"}[t]
+	return []string{"Habits", "Tasks"}[t]
 }
 
-const numTabs = 6
+const numTabs = 2
 
 type mode int
 
 const (
 	modeList     mode = iota
-	modeCreate        // creating a new item
-	modeBackfill      // selecting backfill date, then increment/decrement applies to that date
+	modeCreate
+	modeBackfill
 )
 
+type NewParams struct {
+	HStore   *habits.Store
+	TStore   *tasks.Store
+	ChStore  *chat.Store
+	Ollama   *chat.Client
+	DeepSeek *chat.DeepSeekClient
+	Registry *agent.Registry
+}
 
 type Model struct {
-	width        int
-	height       int
-	activeTab    Tab
-	viewport     viewport.Model
-	ready        bool
-	mode         mode
-	input        textinput.Model
+	width     int
+	height    int
+	activeTab Tab
+	viewport  viewport.Model
+	ready     bool
+	mode      mode
+	input     textinput.Model
+
 	createFreq   string
 	createTarget int
 
-	hStore    *habits.Store
-	tStore    *tasks.Store
-	kStore    *knowledge.Store
-	txnStore  *transactions.Store
-	bStore    *budgets.Store
-	cStore    *calendar.Store
-	chStore    *chat.Store
-	ollama     *chat.Client
+	hStore *habits.Store
+	tStore *tasks.Store
 
-	habits       []core.Habit
-	taskList     []core.Task
-	docs         []core.KnowledgeDoc
-	transactions []core.Transaction
-	budgets      []core.Budget
-	events       []core.CalendarEvent
-	chatConvs    []core.Conversation
-	chatMsgs     []core.Message
-	chatConvID   int64
+	habits   []core.Habit
+	taskList []core.Task
+
+	selected       int
+	backfillActive bool
+	backfillDate   string
+
+	// Chat
+	chStore         *chat.Store
+	ollama          *chat.Client
+	deepseek        *chat.DeepSeekClient
+	agentRegistry   *agent.Registry
+	chatInput       textinput.Model
+	chatHistory     []core.Message
 	chatPending     bool
-	backfillActive  bool
-	selected        int
-	backfillDate    string
+	chatStreamBuf   string
+	chatToolStatus  string
+	chatBackend     string
+	convID          int64
+	program         *tea.Program
 }
 
-func New(hStore *habits.Store, tStore *tasks.Store, kStore *knowledge.Store, txnStore *transactions.Store, bStore *budgets.Store, cStore *calendar.Store, chStore *chat.Store, ollama *chat.Client) *Model {
+func New(p NewParams) *Model {
 	ti := textinput.New()
 	ti.Placeholder = "Name..."
 	ti.CharLimit = 100
+
+	ci := textinput.New()
+	ci.Placeholder = "Message (enter to send, /think for DeepSeek)..."
+	ci.CharLimit = 2000
+	ci.Focus()
 
 	return &Model{
 		activeTab:    TabHabits,
 		mode:         modeList,
 		input:        ti,
+		chatInput:    ci,
 		createFreq:   "daily",
 		createTarget: 1,
 		backfillDate: time.Now().Format("2006-01-02"),
-		hStore:       hStore,
-		tStore:       tStore,
-		kStore:       kStore,
-		txnStore:     txnStore,
-		bStore:       bStore,
-		cStore:       cStore,
-		chStore:      chStore,
-		ollama:       ollama,
+		hStore:       p.HStore,
+		tStore:       p.TStore,
+		chStore:      p.ChStore,
+		ollama:       p.Ollama,
+		deepseek:     p.DeepSeek,
+		agentRegistry: p.Registry,
+		chatBackend:   "ollama",
 	}
+}
+
+func (m *Model) SetProgram(p *tea.Program) {
+	m.program = p
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -153,39 +136,42 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case ingestMsg:
-		if msg.err != nil {
-			log.Printf("ingest error: %v", msg.err)
-		} else {
-			log.Printf("ingested: %s", msg.doc.Title)
-		}
-		m.mode = modeList
-		m.input.Reset()
-		m.input.Placeholder = "Name..."
-		m.refresh()
+	case chatStreamChunkMsg:
+		m.chatStreamBuf += msg.content
 		return m, nil
 
-	case chatResponseMsg:
+	case chatToolStatusMsg:
+		if msg.status == "start" {
+			m.chatToolStatus = fmt.Sprintf("[tool: %s...]", msg.tool)
+		} else {
+			m.chatToolStatus = ""
+		}
+		return m, nil
+
+	case chatStreamDoneMsg:
 		m.chatPending = false
+		m.chatStreamBuf = ""
+		m.chatToolStatus = ""
 		if msg.err != nil {
 			log.Printf("chat error: %v", msg.err)
-		} else {
-			m.chatMsgs, _ = m.chStore.Messages(msg.convID)
 		}
-		m.refresh()
+		m.loadChatHistory()
 		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		sidebarW := 16
-		contentW := m.width - sidebarW - 1
+		contentW := m.width - 16 - 1
+		contentH := m.height - 8
+		if contentH < 6 {
+			contentH = 6
+		}
 		if !m.ready {
-			m.viewport = viewport.New(contentW, m.height-3)
+			m.viewport = viewport.New(contentW, contentH)
 			m.ready = true
 		} else {
 			m.viewport.Width = contentW
-			m.viewport.Height = m.height - 3
+			m.viewport.Height = contentH
 		}
 		return m, nil
 
@@ -199,7 +185,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	return m, nil
+	// Always update chat input when in list mode (chat is always visible)
+	var cmd tea.Cmd
+	m.chatInput, cmd = m.chatInput.Update(msg)
+	return m, cmd
 }
 
 func (m *Model) targetDate() string {
@@ -210,191 +199,163 @@ func (m *Model) targetDate() string {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Chat input always active unless in create or backfill mode
+	if m.mode == modeList {
+		switch msg.String() {
+		case "enter":
+			val := strings.TrimSpace(m.chatInput.Value())
+			if val == "" {
+				return m, nil
+			}
+			if m.chatPending {
+				return m, nil
+			}
+			m.chatPending = true
+			m.chatStreamBuf = ""
+			m.chatToolStatus = ""
+
+			// Detect /think prefix for DeepSeek routing
+			m.chatBackend = "ollama"
+			if strings.HasPrefix(val, "/think ") {
+				m.chatBackend = "deepseek"
+				val = strings.TrimPrefix(val, "/think ")
+			}
+			if strings.HasPrefix(val, "/think") {
+				m.chatBackend = "deepseek"
+				val = strings.TrimSpace(strings.TrimPrefix(val, "/think"))
+				if val == "" {
+					m.chatPending = false
+					return m, nil
+				}
+			}
+
+			m.chatInput.Reset()
+			go m.runChatLoop(val)
+			return m, nil
+
+		case "ctrl+c", "q":
+			return m, tea.Quit
+
+		case "1", "2":
+			idx := int(msg.Runes[0] - '1')
+			if int(idx) < numTabs {
+				m.activeTab = Tab(idx)
+				m.selected = 0
+				m.mode = modeList
+				m.backfillActive = false
+				m.input.Reset()
+				m.refresh()
+			}
+
+		case "tab":
+			m.activeTab = (m.activeTab + 1) % numTabs
+			m.selected = 0
+			m.mode = modeList
+			m.backfillActive = false
+			m.refresh()
+
+		case "shift+tab":
+			m.activeTab = (m.activeTab - 1 + numTabs) % numTabs
+			m.selected = 0
+			m.mode = modeList
+			m.backfillActive = false
+			m.refresh()
+
+		case "j", "down":
+			m.selected++
+			m.clampSelection()
+
+		case "k", "up":
+			m.selected--
+			m.clampSelection()
+
+		case "g":
+			m.selected = 0
+			m.viewport.GotoTop()
+		case "G":
+			switch m.activeTab {
+			case TabHabits:
+				m.selected = len(m.habits) - 1
+			case TabTasks:
+				m.selected = len(m.taskList) - 1
+			}
+			m.clampSelection()
+			m.viewport.GotoBottom()
+
+		case "n":
+			if m.activeTab == TabHabits || m.activeTab == TabTasks {
+				m.mode = modeCreate
+				m.createFreq = "daily"
+				m.createTarget = 1
+				m.input.Focus()
+				m.input.Placeholder = "Name..."
+			}
+
+		case "+", "=":
+			if m.activeTab == TabHabits && m.selected < len(m.habits) {
+				m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), 1)
+				m.refresh()
+			}
+
+		case "-":
+			if m.activeTab == TabHabits && m.selected < len(m.habits) {
+				m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), -1)
+				m.refresh()
+			}
+
+		case "x":
+			if m.activeTab == TabHabits && m.selected < len(m.habits) {
+				h := m.habits[m.selected]
+				m.hStore.SetEntry(h.ID, m.targetDate(), h.TargetValue, "")
+				m.refresh()
+			}
+			if m.activeTab == TabTasks && m.selected < len(m.taskList) {
+				m.tStore.CompleteTask(m.taskList[m.selected].ID)
+				m.refresh()
+			}
+
+		case "b":
+			if m.activeTab == TabHabits {
+				if m.backfillActive {
+					m.backfillActive = false
+					return m, nil
+				}
+				m.mode = modeBackfill
+				m.backfillDate = time.Now().Format("2006-01-02")
+				m.backfillActive = false
+				m.input.SetValue(m.backfillDate)
+				m.input.Focus()
+			}
+
+		case "d":
+			switch m.activeTab {
+			case TabHabits:
+				if m.selected < len(m.habits) {
+					m.hStore.Delete(m.habits[m.selected].ID)
+					m.selected = 0
+					m.refresh()
+				}
+			case TabTasks:
+				if m.selected < len(m.taskList) {
+					m.tStore.DeleteTask(m.taskList[m.selected].ID)
+					m.selected = 0
+					m.refresh()
+				}
+			}
+		}
+
+		return m, nil
+	}
+
 	if m.mode == modeCreate {
 		return m.handleCreateKey(msg)
 	}
 	if m.mode == modeBackfill {
 		return m.handleBackfillKey(msg)
 	}
-	if m.activeTab == TabChat && m.chatConvID > 0 {
-		return m.handleChatKey(msg)
-	}
-
-	switch msg.String() {
-	case "ctrl+c", "q":
-		return m, tea.Quit
-
-	case "1", "2", "3", "4", "5", "6":
-		idx := int(msg.Runes[0] - '1')
-		m.activeTab = Tab(idx)
-		m.selected = 0
-		m.mode = modeList
-		m.backfillActive = false
-		m.input.Reset()
-		m.refresh()
-
-	case "tab":
-		m.activeTab = (m.activeTab + 1) % numTabs
-		m.selected = 0
-		m.mode = modeList
-		m.backfillActive = false
-		m.refresh()
-
-	case "shift+tab":
-		m.activeTab = (m.activeTab - 1 + numTabs) % numTabs
-		m.selected = 0
-		m.mode = modeList
-		m.backfillActive = false
-		m.refresh()
-
-	case "j", "down":
-		m.selected++
-		m.clampSelection()
-
-	case "k", "up":
-		m.selected--
-		m.clampSelection()
-
-	case "g":
-		m.selected = 0
-		m.viewport.GotoTop()
-	case "G":
-		switch m.activeTab {
-		case TabHabits:
-			m.selected = len(m.habits) - 1
-		case TabTasks:
-			m.selected = len(m.taskList) - 1
-		case TabFinance:
-			m.selected = len(m.transactions) - 1
-		case TabCalendar:
-			m.selected = len(m.events) - 1
-		case TabKnowledge:
-			m.selected = len(m.docs) - 1
-		case TabChat:
-			if m.chatConvID > 0 {
-				m.selected = len(m.chatMsgs) - 1
-			} else {
-				m.selected = len(m.chatConvs) - 1
-			}
-		}
-		m.clampSelection()
-		m.viewport.GotoBottom()
-
-	case "n":
-		if m.activeTab == TabHabits || m.activeTab == TabTasks || m.activeTab == TabKnowledge || m.activeTab == TabFinance || m.activeTab == TabCalendar || m.activeTab == TabChat {
-			m.mode = modeCreate
-			m.createFreq = "daily"
-			m.createTarget = 1
-			m.input.Focus()
-			switch m.activeTab {
-			case TabKnowledge:
-				m.input.Placeholder = "URL..."
-			case TabFinance:
-				m.input.Placeholder = "+/-amt category..."
-			case TabCalendar:
-				m.input.Placeholder = "title YYYY-MM-DD..."
-			default:
-				m.input.Placeholder = "Name..."
-			}
-		}
-
-
-		case "B":
-			if m.activeTab == TabFinance {
-				m.mode = modeCreate
-				m.input.Placeholder = "category amount..."
-				m.input.Focus()
-			}
-	case "+", "=":
-		if m.activeTab == TabHabits && m.selected < len(m.habits) {
-			m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), 1)
-			m.refresh()
-		}
-
-	case "-":
-		if m.activeTab == TabHabits && m.selected < len(m.habits) {
-			m.hStore.IncrementEntry(m.habits[m.selected].ID, m.targetDate(), -1)
-			m.refresh()
-		}
-
-	case "x":
-		if m.activeTab == TabHabits && m.selected < len(m.habits) {
-			h := m.habits[m.selected]
-			m.hStore.SetEntry(h.ID, m.targetDate(), h.TargetValue, "")
-			m.refresh()
-		}
-		if m.activeTab == TabTasks && m.selected < len(m.taskList) {
-			m.tStore.CompleteTask(m.taskList[m.selected].ID)
-			m.refresh()
-		}
-
-	case "b":
-		if m.activeTab == TabHabits {
-			if m.backfillActive {
-				m.backfillActive = false
-				return m, nil
-			}
-			m.mode = modeBackfill
-			m.backfillDate = time.Now().Format("2006-01-02")
-			m.backfillActive = false
-			m.input.SetValue(m.backfillDate)
-			m.input.Focus()
-		}
-
-	case "enter":
-		if m.activeTab == TabChat && m.chatConvID == 0 && m.selected < len(m.chatConvs) {
-			m.chatConvID = m.chatConvs[m.selected].ID
-			m.chatMsgs, _ = m.chStore.Messages(m.chatConvID)
-			m.selected = 0
-			m.input.Placeholder = "Message..."
-			m.input.Focus()
-			m.refresh()
-		}
-
-	case "d":
-		switch m.activeTab {
-		case TabHabits:
-			if m.selected < len(m.habits) {
-				m.hStore.Delete(m.habits[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		case TabTasks:
-			if m.selected < len(m.taskList) {
-				m.tStore.DeleteTask(m.taskList[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		case TabFinance:
-			if m.selected < len(m.transactions) {
-				m.txnStore.Delete(m.transactions[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		case TabKnowledge:
-			if m.selected < len(m.docs) {
-				m.kStore.Delete(m.docs[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		case TabCalendar:
-			if m.selected < len(m.events) {
-				m.cStore.Delete(m.events[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		case TabChat:
-			if m.chatConvID == 0 && m.selected < len(m.chatConvs) {
-				m.chStore.DeleteConversation(m.chatConvs[m.selected].ID)
-				m.selected = 0
-				m.refresh()
-			}
-		}
-	}
 
 	return m, nil
 }
-
 
 func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -412,58 +373,13 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case TabHabits:
 			m.hStore.Create(&core.Habit{Name: val, Frequency: m.createFreq, TargetValue: m.createTarget})
-			m.mode = modeList
-			m.input.Reset()
-			m.input.Placeholder = "Name..."
-			m.refresh()
-			return m, nil
 		case TabTasks:
 			m.tStore.CreateTask(&core.Task{Title: val, Status: "todo", Priority: "med"})
-			m.mode = modeList
-			m.input.Reset()
-			m.input.Placeholder = "Name..."
-			m.refresh()
-			return m, nil
-		case TabKnowledge:
-			return m, ingestURL(m.kStore, val)
-		case TabFinance:
-			if m.input.Placeholder == "category amount..." {
-				cat, amt := parseBudget(val)
-				m.bStore.Create(&core.Budget{Category: cat, AmountCents: amt, Period: "monthly", StartDate: time.Now().Format("2006-01-02")})
-			} else {
-				amount, cat, txType := parseTransaction(val)
-				m.txnStore.Add(&core.Transaction{Amount: amount, Type: txType, Category: cat})
-			}
-			m.mode = modeList
-			m.input.Reset()
-			m.input.Placeholder = "Name..."
-			m.refresh()
-			return m, nil
-		case TabCalendar:
-			title, start, end := parseCalendarEvent(val)
-			m.cStore.Create(&core.CalendarEvent{
-				Title: title, StartTime: start, EndTime: end,
-			})
-			m.mode = modeList
-			m.input.Reset()
-			m.input.Placeholder = "Name..."
-			m.refresh()
-			return m, nil
-		case TabChat:
-			id, err := m.chStore.CreateConversation(val, m.ollama.Model)
-			if err != nil {
-				log.Printf("create conversation: %v", err)
-				return m, nil
-			}
-			m.chatConvID = id
-			m.chatMsgs = nil
-			m.input.Placeholder = "Message..."
-			m.input.Focus()
-			m.mode = modeList
-			m.refresh()
-			return m, nil
 		}
-
+		m.mode = modeList
+		m.input.Reset()
+		m.input.Placeholder = "Name..."
+		m.refresh()
 		return m, nil
 
 	case "tab":
@@ -527,37 +443,6 @@ func (m *Model) handleBackfillKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *Model) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.chatConvID = 0
-		m.chatMsgs = nil
-		m.selected = 0
-		m.input.Reset()
-		m.input.Placeholder = "Name..."
-		m.refresh()
-		return m, nil
-
-	case "enter":
-		if m.chatPending {
-			return m, nil
-		}
-		val := strings.TrimSpace(m.input.Value())
-		if val == "" {
-			return m, nil
-		}
-		m.chatPending = true
-		m.input.Reset()
-		m.refresh()
-		return m, sendChat(m.chStore, m.ollama, m.chatConvID, m.chatMsgs, val)
-
-	default:
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		return m, cmd
-	}
-}
-
 func (m *Model) clampSelection() {
 	var max int
 	switch m.activeTab {
@@ -565,18 +450,6 @@ func (m *Model) clampSelection() {
 		max = len(m.habits) - 1
 	case TabTasks:
 		max = len(m.taskList) - 1
-	case TabFinance:
-		max = len(m.transactions) - 1
-	case TabKnowledge:
-		max = len(m.docs) - 1
-		case TabCalendar:
-			max = len(m.events) - 1
-		case TabChat:
-			if m.chatConvID > 0 {
-				max = len(m.chatMsgs) - 1
-			} else {
-				max = len(m.chatConvs) - 1
-			}
 	}
 	if m.selected < 0 {
 		m.selected = 0
@@ -592,26 +465,64 @@ func (m *Model) refresh() {
 		m.habits, _ = m.hStore.List(false)
 	case TabTasks:
 		m.taskList, _ = m.tStore.ListTasks(tasks.Filter{})
-	case TabFinance:
-		now := time.Now()
-		m.budgets, _ = m.bStore.List()
-		m.transactions, _ = m.txnStore.List(transactions.Filter{
-			Year: now.Year(), Month: int(now.Month()),
-		})
-	case TabKnowledge:
-		m.docs, _ = m.kStore.List()
-	case TabCalendar:
-		now := time.Now()
-		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-		end := start.AddDate(0, 1, 0)
-		m.events, _ = m.cStore.List(start, end)
-	case TabChat:
-		m.chatConvs, _ = m.chStore.ListConversations()
-		if m.chatConvID > 0 {
-			m.chatMsgs, _ = m.chStore.Messages(m.chatConvID)
-		}
 	}
 	m.clampSelection()
+	m.loadChatHistory()
+}
+
+func (m *Model) loadChatHistory() {
+	if m.convID > 0 {
+		m.chatHistory, _ = m.chStore.Messages(m.convID)
+	}
+}
+
+func (m *Model) ensureConversation() {
+	if m.convID == 0 {
+		id, err := m.chStore.CreateConversation("Chat", m.ollama.Model)
+		if err != nil {
+			log.Printf("create conversation: %v", err)
+			return
+		}
+		m.convID = id
+	}
+}
+
+func (m *Model) runChatLoop(userMsg string) {
+	m.ensureConversation()
+	if m.convID == 0 {
+		m.program.Send(chatStreamDoneMsg{err: fmt.Errorf("no conversation")})
+		return
+	}
+
+	// Save user message
+	if _, err := m.chStore.AddMessage(m.convID, "user", userMsg); err != nil {
+		m.program.Send(chatStreamDoneMsg{err: err})
+		return
+	}
+
+	// Select backend
+	var backend chat.Backend = m.ollama
+	modelName := m.ollama.Model
+	if m.chatBackend == "deepseek" {
+		if m.deepseek == nil {
+			m.program.Send(chatStreamDoneMsg{err: fmt.Errorf("DeepSeek not configured (set api_key in config)")})
+			return
+		}
+		backend = m.deepseek
+		modelName = "deepseek-chat"
+	}
+
+	agt := agent.New(backend, m.chStore, m.agentRegistry, m.convID, modelName)
+	_, err := agt.RunStream(agent.Callbacks{
+		OnChunk: func(chunk string) {
+			m.program.Send(chatStreamChunkMsg{content: chunk})
+		},
+		OnTool: func(tool, status string) {
+			m.program.Send(chatToolStatusMsg{tool: tool, status: status})
+		},
+	})
+
+	m.program.Send(chatStreamDoneMsg{err: err})
 }
 
 func (m *Model) View() string {
@@ -624,14 +535,26 @@ func (m *Model) View() string {
 	sidebarW := 16
 	sidebar := m.renderSidebar(sidebarW, m.height-2)
 
-	m.viewport.Width = m.width - sidebarW - 1
-	m.viewport.Height = m.height - 3
+	// Main content area (viewport)
+	contentW := m.width - sidebarW - 1
+	contentH := m.height - 8
+	if contentH < 6 {
+		contentH = 6
+	}
+	m.viewport.Width = contentW
+	m.viewport.Height = contentH
 	m.viewport.SetContent(m.contentForTab(m.activeTab))
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, m.viewport.View())
+
+	// Chat panel at the bottom
+	chatPanel := m.renderChatPanel()
+
 	help := m.renderHelp()
 
-	return lipgloss.JoinVertical(lipgloss.Left, body, help)
+	// Combine: body + chat panel + help
+	upper := lipgloss.JoinVertical(lipgloss.Left, body, chatPanel)
+	return lipgloss.JoinVertical(lipgloss.Left, upper, help)
 }
 
 func (m *Model) renderSidebar(w, h int) string {
@@ -644,7 +567,7 @@ func (m *Model) renderSidebar(w, h int) string {
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc")).Bold(true)
 	sb.WriteString(title.Render("  sica") + "\n\n")
 
-	for _, t := range []Tab{TabHabits, TabTasks, TabFinance, TabCalendar, TabKnowledge, TabChat} {
+	for _, t := range []Tab{TabHabits, TabTasks} {
 		prefix := "  "
 		suffix := ""
 		if t == m.activeTab {
@@ -659,12 +582,6 @@ func (m *Model) renderSidebar(w, h int) string {
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.habits)))
 	case TabTasks:
 		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.taskList)))
-	case TabFinance:
-		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.transactions)))
-	case TabKnowledge:
-		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.docs)))
-	case TabChat:
-		sb.WriteString(fmt.Sprintf("\n  %d items", len(m.chatConvs)))
 	}
 
 	return style.Render(sb.String())
@@ -683,10 +600,6 @@ func (m *Model) renderHelp() string {
 			return style.Render(fmt.Sprintf(
 				"  enter confirm  │  esc cancel  │  tab freq [%s]  │  [/] target [%d]",
 				m.createFreq, m.createTarget))
-		case TabFinance:
-			return style.Render("  enter confirm  │  esc cancel  │  type +/−amt category")
-		case TabKnowledge:
-			return style.Render("  enter ingest URL  │  esc cancel")
 		default:
 			return style.Render("  enter confirm  │  esc cancel")
 		}
@@ -702,20 +615,8 @@ func (m *Model) renderHelp() string {
 		actions = "n new  │  +/− adjust  │  x meet target  │  b backfill  │  d delete"
 	case TabTasks:
 		actions = "n new  │  x complete  │  d delete"
-	case TabFinance:
-		actions = "n add  │  d delete"
-	case TabKnowledge:
-		actions = "n ingest URL  │  d delete"
-	case TabChat:
-		if m.chatConvID > 0 {
-			actions = "esc back"
-		} else {
-			actions = "n new  │  enter open  │  d delete"
-		}
-	default:
-		actions = ""
 	}
-	return style.Render(fmt.Sprintf("  1-6 tabs  │  j/k navigate  │  %s  │  q quit", actions))
+	return style.Render(fmt.Sprintf("  1-2 tabs  │  j/k navigate  │  %s  │  q quit", actions))
 }
 
 func (m *Model) contentForTab(tab Tab) string {
@@ -735,14 +636,6 @@ func (m *Model) contentForTab(tab Tab) string {
 		sb.WriteString(m.renderHabits())
 	case TabTasks:
 		sb.WriteString(m.renderTasks())
-	case TabFinance:
-		sb.WriteString(m.renderFinance())
-	case TabKnowledge:
-		sb.WriteString(m.renderDocs())
-	case TabCalendar:
-		sb.WriteString(m.renderCalendar())
-	case TabChat:
-		sb.WriteString(m.renderChat())
 	}
 
 	return sb.String()
@@ -754,14 +647,6 @@ func createLabel(tab Tab) string {
 		return "Habit"
 	case TabTasks:
 		return "Task"
-	case TabFinance:
-		return "Transaction"
-	case TabCalendar:
-		return "Event"
-	case TabKnowledge:
-		return "Document"
-	case TabChat:
-		return "Conversation"
 	}
 	return tab.String()
 }
@@ -776,10 +661,6 @@ func (m *Model) renderCreateForm(tab Tab) string {
 		acc := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
 		sb.WriteString("Frequency: " + acc.Render(m.createFreq) + " (tab to cycle)\n")
 		sb.WriteString("Target:    " + acc.Render(strconv.Itoa(m.createTarget)) + " ([ / ] to adjust)\n")
-	case TabFinance:
-		sb.WriteString("Format: +/−amount category   e.g. -12.50 lunch\n")
-	case TabKnowledge:
-		sb.WriteString("Paste a URL to ingest.\n")
 	}
 
 	return sb.String()
@@ -829,7 +710,7 @@ func (m *Model) renderHabits() string {
 		}
 
 		dateLabel := ""
-		if m.mode == modeBackfill {
+		if m.backfillActive {
 			dateLabel = dimStyle.Render("  @" + m.backfillDate)
 		}
 
@@ -874,278 +755,68 @@ func (m *Model) renderTasks() string {
 	return sb.String()
 }
 
-func (m *Model) renderFinance() string {
-	var sb strings.Builder
+func (m *Model) renderChatPanel() string {
+	chatH := 5
+	style := lipgloss.NewStyle().
+		Width(m.width).
+		Height(chatH).
+		BorderStyle(lipgloss.NormalBorder()).BorderTop(true).
+		BorderForeground(lipgloss.Color("#555555"))
+
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	incomeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
-	expenseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cc7c7c"))
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cc7c7c"))
-
-	now := time.Now()
-	summary, _ := m.txnStore.MonthSummary(now.Year(), int(now.Month()))
-	if summary != nil {
-		balance := summary.Income - summary.Expense
-		sb.WriteString(fmt.Sprintf("  Income:   %s\n", incomeStyle.Render("$"+formatCents(summary.Income))))
-		sb.WriteString(fmt.Sprintf("  Expenses: %s\n", expenseStyle.Render("$"+formatCents(summary.Expense))))
-		balStyle := incomeStyle
-		if balance < 0 {
-			balStyle = expenseStyle
-		}
-		sb.WriteString(fmt.Sprintf("  Balance:  %s\n", balStyle.Render("$"+formatCents(balance))))
-
-		if len(m.budgets) > 0 {
-			sb.WriteString("\n  ── Budgets ──\n")
-			for _, b := range m.budgets {
-				spent := summary.ByCategory[b.Category]
-				pct := int64(0)
-				if b.AmountCents > 0 {
-					pct = spent * 100 / b.AmountCents
-				}
-				pctStr := dimStyle.Render(fmt.Sprintf("[%d%%]", pct))
-				if pct > 100 {
-					pctStr = warnStyle.Render(fmt.Sprintf("[%d%%!]", pct))
-				}
-				spentStr := expenseStyle.Render("$" + formatCents(spent))
-				budgetStr := dimStyle.Render("$" + formatCents(b.AmountCents))
-				sb.WriteString(fmt.Sprintf("    %s  %s / %s  %s\n", b.Category, spentStr, budgetStr, pctStr))
-			}
-		}
-		sb.WriteString("\n")
-	} else {
-		sb.WriteString("\n")
-	}
-
-	if len(m.transactions) == 0 {
-		sb.WriteString("No transactions this month.\n\nPress 'n' to add one:  +/−amt category\n")
-		sb.WriteString("Press 'B' to set a budget:     category amount\n")
-		return sb.String()
-	}
-
-	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
-
-	for i, tx := range m.transactions {
-		prefix := "  "
-		if i == m.selected {
-			prefix = selStyle.Render("▸ ")
-		}
-
-		amt := "$" + formatCents(tx.Amount)
-		amtStyle := expenseStyle
-		if tx.Type == "income" {
-			amtStyle = incomeStyle
-			amt = "+" + amt
-		} else {
-			amt = "-" + amt
-		}
-
-		sb.WriteString(fmt.Sprintf("%s%s %s  %s  %s\n",
-			prefix, dimStyle.Render(tx.Date), amtStyle.Render(amt), tx.Category, dimStyle.Render(tx.Description)))
-	}
-	return sb.String()
-}
-
-
-func (m *Model) renderCalendar() string {
-	if len(m.events) == 0 {
-		return "No events this month.\n\nPress 'n' to add one:  title YYYY-MM-DD\n"
-	}
-
-	var sb strings.Builder
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
-	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
-
-	var lastDate string
-	for i, e := range m.events {
-		dateStr := e.StartTime.Format("Mon 2006-01-02")
-		if dateStr != lastDate {
-			lastDate = dateStr
-			sb.WriteString("\n  " + dateStyle.Render(dateStr) + "\n")
-		}
-
-		prefix := "    "
-		if i == m.selected {
-			prefix = "  " + selStyle.Render("▸ ")
-		}
-
-		timeStr := e.StartTime.Format("15:04")
-		if timeStr == "00:00" {
-			timeStr = "all day"
-		}
-		sb.WriteString(fmt.Sprintf("%s%s  %s\n", prefix, dimStyle.Render(timeStr), e.Title))
-	}
-	return sb.String()
-}
-
-func (m *Model) renderChat() string {
-	if m.chatConvID > 0 {
-		return m.renderChatMessages()
-	}
-
-	if len(m.chatConvs) == 0 {
-		return "No conversations yet.\n\nPress 'n' to start a new conversation.\n"
-	}
-
-	var sb strings.Builder
-	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-
-	for i, c := range m.chatConvs {
-		prefix := "  "
-		if i == m.selected {
-			prefix = selStyle.Render("▸ ")
-		}
-		modelStr := dimStyle.Render("  [" + c.Model + "]")
-		sb.WriteString(fmt.Sprintf("%s%s%s\n", prefix, c.Title, modelStr))
-	}
-	return sb.String()
-}
-
-func (m *Model) renderChatMessages() string {
-	var sb strings.Builder
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
 	aiStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7ccc7c"))
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
 
-	// Find conversation title
-	title := "Chat"
-	for _, c := range m.chatConvs {
-		if c.ID == m.chatConvID {
-			title = c.Title
-			break
-		}
+	var sb strings.Builder
+
+	// Show last 2 messages from history
+	start := 0
+	if len(m.chatHistory) > 2 {
+		start = len(m.chatHistory) - 2
 	}
-	sb.WriteString(dimStyle.Render("── " + title + " ──") + "\n\n")
-
-	for _, msg := range m.chatMsgs {
+	for _, msg := range m.chatHistory[start:] {
+		if msg.Role == "tool" {
+			continue
+		}
 		roleStyle := userStyle
 		roleLabel := "You"
 		if msg.Role == "assistant" {
 			roleStyle = aiStyle
 			roleLabel = "AI"
 		}
-		sb.WriteString(roleStyle.Render(roleLabel + ":") + "\n")
-		sb.WriteString(msg.Content + "\n\n")
+		content := msg.Content
+		if len(content) > 100 {
+			content = content[:100] + "..."
+		}
+		content = strings.ReplaceAll(content, "\n", " ")
+		sb.WriteString(roleStyle.Render(roleLabel+": ") + dimStyle.Render(content) + "\n")
 	}
 
+	// Show streaming content
 	if m.chatPending {
-		sb.WriteString(aiStyle.Render("AI:") + "\n")
-		sb.WriteString(dimStyle.Render("...") + "\n")
-	}
-
-	sb.WriteString("\n" + dimStyle.Render("───") + "\n")
-	sb.WriteString(m.input.View() + "\n")
-	sb.WriteString(dimStyle.Render("enter send  │  esc back"))
-	return sb.String()
-}
-func (m *Model) renderDocs() string {
-	if len(m.docs) == 0 {
-		return "No documents yet.\n\nPress 'n' to ingest a URL.\n"
-	}
-
-	var sb strings.Builder
-	selStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c9acc"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-
-	for i, d := range m.docs {
-		prefix := "  "
-		if i == m.selected {
-			prefix = selStyle.Render("▸ ")
+		sb.WriteString(aiStyle.Render("AI: "))
+		if m.chatStreamBuf != "" {
+			streamPreview := m.chatStreamBuf
+			if len(streamPreview) > 80 {
+				streamPreview = streamPreview[len(streamPreview)-80:]
+			}
+			sb.WriteString(streamPreview)
+		} else {
+			sb.WriteString(dimStyle.Render("..."))
 		}
-		tags := ""
-		if len(d.Tags) > 0 {
-			tags = dimStyle.Render("  [" + strings.Join(d.Tags, ", ") + "]")
-		}
-		sb.WriteString(fmt.Sprintf("%s%s%s\n", prefix, d.Title, tags))
-	}
-	sb.WriteString("\n" + dimStyle.Render("enter to read  │  d to delete"))
-	return sb.String()
-}
-
-func formatCents(cents int64) string {
-	dollars := float64(cents) / 100.0
-	whole := int64(math.Abs(dollars))
-	frac := int64(math.Abs(dollars)*100) % 100
-	if cents < 0 {
-		return fmt.Sprintf("-%d.%02d", whole, frac)
-	}
-	return fmt.Sprintf("%d.%02d", whole, frac)
-}
-
-func parseTransaction(input string) (amount int64, category string, txType string) {
-	input = strings.TrimSpace(input)
-	txType = "expense"
-	if input == "" {
-		return 0, "other", txType
-	}
-
-	if input[0] == '+' {
-		txType = "income"
-		input = input[1:]
-	} else if input[0] == '-' {
-		input = input[1:]
-	}
-
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return 0, "other", txType
-	}
-
-	amountStr := parts[0]
-	category = "other"
-	if len(parts) > 1 {
-		category = strings.Join(parts[1:], " ")
-	}
-
-	dollars, err := strconv.ParseFloat(amountStr, 64)
-	if err != nil {
-		return 0, category, txType
-	}
-
-	cents := int64(math.Round(math.Abs(dollars) * 100))
-	return cents, category, txType
-}
-
-func parseBudget(input string) (category string, amountCents int64) {
-	input = strings.TrimSpace(input)
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return "other", 0
-	}
-	category = parts[0]
-	if len(parts) > 1 {
-		dollars, err := strconv.ParseFloat(parts[1], 64)
-		if err == nil {
-			amountCents = int64(math.Round(math.Abs(dollars) * 100))
+		if m.chatToolStatus != "" {
+			sb.WriteString("  " + dimStyle.Render(m.chatToolStatus))
 		}
 	}
-	return category, amountCents
-}
 
-func parseCalendarEvent(input string) (title string, start, end time.Time) {
-	input = strings.TrimSpace(input)
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	// Chat input
+	sb.WriteString("\n" + m.chatInput.View())
 
-	// Default: all-day event today
-	if input == "" {
-		return "Untitled", today, today.Add(24 * time.Hour)
+	backendHint := "ollama"
+	if strings.HasPrefix(m.chatInput.Value(), "/think") {
+		backendHint = "deepseek"
 	}
+	sb.WriteString(dimStyle.Render(fmt.Sprintf("  [enter send | /think deepseek | now: %s]", backendHint)))
 
-	// Find the date pattern YYYY-MM-DD at the end
-	parts := strings.Fields(input)
-	dateStr := parts[len(parts)-1]
-	parsed, err := time.Parse("2006-01-02", dateStr)
-	if err == nil {
-		title = strings.Join(parts[:len(parts)-1], " ")
-		start = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local)
-	} else {
-		title = input
-		start = today
-	}
-	if title == "" {
-		title = "Untitled"
-	}
-	end = start.Add(24 * time.Hour)
-	return title, start, end
+	return style.Render(sb.String())
 }

@@ -10,26 +10,27 @@ import (
 )
 
 type Config struct {
-	Database  databaseConfig  `mapstructure:"database"`
-	Knowledge knowledgeConfig `mapstructure:"knowledge"`
-	AI        aiConfig        `mapstructure:"ai"`
+	Database databaseConfig `mapstructure:"database"`
+	AI       aiConfig       `mapstructure:"ai"`
 }
 
 type databaseConfig struct {
 	Path string `mapstructure:"path"`
 }
 
-type knowledgeConfig struct {
-	Path string `mapstructure:"path"`
-}
-
 type aiConfig struct {
-	Ollama ollamaConfig `mapstructure:"ollama"`
+	Ollama   ollamaConfig   `mapstructure:"ollama"`
+	DeepSeek deepseekConfig `mapstructure:"deepseek"`
 }
 
 type ollamaConfig struct {
 	Host  string `mapstructure:"host"`
 	Model string `mapstructure:"model"`
+}
+
+type deepseekConfig struct {
+	APIKey string `mapstructure:"api_key"`
+	Model  string `mapstructure:"model"`
 }
 
 func SicaDir() string {
@@ -46,13 +47,13 @@ func defaultConfig() *Config {
 		Database: databaseConfig{
 			Path: filepath.Join(sicaDir, "data.db"),
 		},
-		Knowledge: knowledgeConfig{
-			Path: filepath.Join(sicaDir, "knowledge"),
-		},
 		AI: aiConfig{
 			Ollama: ollamaConfig{
 				Host:  "http://localhost:11434",
-				Model: "qwen2.5:14b",
+				Model: "qwen2.5:7b",
+			},
+			DeepSeek: deepseekConfig{
+				Model: "deepseek-chat",
 			},
 		},
 	}
@@ -72,7 +73,6 @@ func Load() (*Config, error) {
 	v.SetConfigType("yaml")
 
 	v.SetDefault("database", cfg.Database)
-	v.SetDefault("knowledge", cfg.Knowledge)
 	v.SetDefault("ai", cfg.AI)
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -92,7 +92,6 @@ func Load() (*Config, error) {
 	}
 
 	cfg.Database.Path = expandPath(cfg.Database.Path)
-	cfg.Knowledge.Path = expandPath(cfg.Knowledge.Path)
 
 	return cfg, nil
 }

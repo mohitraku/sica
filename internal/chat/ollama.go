@@ -11,21 +11,38 @@ import (
 	"time"
 )
 
+type ToolCall struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type StreamEvent struct {
+	Content   string
+	ToolCalls []ToolCall
+	Done      bool
+}
+
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model    string           `json:"model"`
+	Messages []Message        `json:"messages"`
+	Stream   bool             `json:"stream"`
+	Tools    []map[string]any `json:"tools,omitempty"`
 }
 
 type chatResponse struct {
 	Message struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role      string     `json:"role"`
+		Content   string     `json:"content"`
+		ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	} `json:"message"`
 	Done bool `json:"done"`
 }
@@ -73,11 +90,12 @@ func (c *Client) Chat(messages []Message) (string, error) {
 	return cr.Message.Content, nil
 }
 
-func (c *Client) ChatStream(messages []Message, onChunk func(chunk string) error) error {
+func (c *Client) ChatStream(messages []Message, tools []map[string]any, onEvent func(StreamEvent) error) error {
 	body := chatRequest{
 		Model:    c.Model,
 		Messages: messages,
 		Stream:   true,
+		Tools:    tools,
 	}
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -102,10 +120,13 @@ func (c *Client) ChatStream(messages []Message, onChunk func(chunk string) error
 		if err := json.Unmarshal(scanner.Bytes(), &cr); err != nil {
 			continue
 		}
-		if cr.Message.Content != "" {
-			if err := onChunk(cr.Message.Content); err != nil {
-				return err
-			}
+		ev := StreamEvent{
+			Content:   cr.Message.Content,
+			ToolCalls: cr.Message.ToolCalls,
+			Done:      cr.Done,
+		}
+		if err := onEvent(ev); err != nil {
+			return err
 		}
 		if cr.Done {
 			break
