@@ -19,7 +19,6 @@ builds:
       - -X main.Date={{ .Date }}
     goos:
       - linux
-      - darwin
       - windows
     goarch:
       - amd64
@@ -36,9 +35,7 @@ archives:
     formats:
       - tar.gz
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_
-      {{- if eq .Os "darwin" }}macOS
-      {{- else }}{{ .Os }}{{ end }}_
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
@@ -87,18 +84,3 @@ release:
     By default, sica stores data in `~/.sica/`. Set the `SICA_DATA_DIR` environment variable to use a custom location.
   footer: |
     **Full Changelog**: https://github.com/mohitraku/sica/compare/{{ .PreviousTag }}...{{ .Tag }}
-
-brews:
-  - name: sica
-    repository:
-      owner: mohitraku
-      name: homebrew-tap
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    directory: Formula
-    homepage: https://github.com/mohitraku/sica
-    description: "A terminal-based habit tracker"
-    license: MIT
-    install: |
-      bin.install "sica"
