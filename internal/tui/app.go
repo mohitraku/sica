@@ -10,10 +10,10 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
-	"github.com/mojitrk/sica/internal/models"
-	"github.com/mojitrk/sica/internal/steward"
-	"github.com/mojitrk/sica/internal/storage"
-	"github.com/mojitrk/sica/internal/tui/views"
+	"github.com/mohitraku/sica/internal/models"
+	"github.com/mohitraku/sica/internal/steward"
+	"github.com/mohitraku/sica/internal/storage"
+	"github.com/mohitraku/sica/internal/tui/views"
 )
 
 type Model struct {

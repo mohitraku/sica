@@ -3,7 +3,7 @@ package storage
 import (
 	"database/sql"
 
-	"github.com/mojitrk/sica/internal/models"
+	"github.com/mohitraku/sica/internal/models"
 )
 
 type EntryStore struct {

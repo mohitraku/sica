@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/mojitrk/sica/internal/models"
+	"github.com/mohitraku/sica/internal/models"
 )
 
 var validFrequencies = map[string]bool{"daily": true, "weekly": true, "monthly": true}

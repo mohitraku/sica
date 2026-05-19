@@ -3,8 +3,8 @@ package steward_test
 import (
 	"testing"
 
-	"github.com/mojitrk/sica/internal/models"
-	"github.com/mojitrk/sica/internal/steward"
+	"github.com/mohitraku/sica/internal/models"
+	"github.com/mohitraku/sica/internal/steward"
 )
 
 func makeEntry(date string, value int) models.HabitEntry {

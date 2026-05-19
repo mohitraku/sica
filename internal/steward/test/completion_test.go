@@ -3,7 +3,7 @@ package steward_test
 import (
 	"testing"
 
-	"github.com/mojitrk/sica/internal/steward"
+	"github.com/mohitraku/sica/internal/steward"
 )
 
 func TestIsDone(t *testing.T) {

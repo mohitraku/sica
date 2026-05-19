@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/mojitrk/sica/internal/models"
-	"github.com/mojitrk/sica/internal/storage"
+	"github.com/mohitraku/sica/internal/models"
+	"github.com/mohitraku/sica/internal/storage"
 
 	_ "modernc.org/sqlite"
 )

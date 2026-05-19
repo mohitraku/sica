@@ -6,8 +6,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/mojitrk/sica/internal/models"
-	"github.com/mojitrk/sica/internal/steward"
+	"github.com/mohitraku/sica/internal/models"
+	"github.com/mohitraku/sica/internal/steward"
 )
 
 type HabitList struct {

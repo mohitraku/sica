@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/mojitrk/sica/internal/models"
+	"github.com/mohitraku/sica/internal/models"
 )
 
 func CurrentStreak(entries []models.HabitEntry, habit models.Habit, today string) int {

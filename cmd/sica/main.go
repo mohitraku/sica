@@ -6,11 +6,22 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/mojitrk/sica/internal/storage"
-	"github.com/mojitrk/sica/internal/tui"
+	"github.com/mohitraku/sica/internal/storage"
+	"github.com/mohitraku/sica/internal/tui"
+)
+
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Printf("sica %s (commit %s, built %s)\n", Version, Commit, Date)
+		return
+	}
+
 	dataDir := sicaDir()
 
 	db, err := storage.Open(dataDir)
@@ -32,6 +43,9 @@ func main() {
 }
 
 func sicaDir() string {
+	if dir := os.Getenv("SICA_DATA_DIR"); dir != "" {
+		return dir
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".sica"

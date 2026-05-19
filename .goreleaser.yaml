@@ -1,0 +1,103 @@
+version: 2
+
+project_name: sica
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sica
+    main: ./cmd/sica
+    binary: sica
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Version }}
+      - -X main.Commit={{ .Commit }}
+      - -X main.Date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    tags:
+      - osusergo
+      - netgo
+
+archives:
+  - id: sica
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  header: |
+    ## sica {{ .Version }}
+
+    A terminal-based habit tracker.
+
+    ### Installation
+
+    Download the archive for your platform from the assets below, extract, and move the `sica` binary into your PATH.
+
+    ```bash
+    # Example (Linux amd64)
+    tar xzf sica_{{ .Version }}_linux_x86_64.tar.gz
+    mv sica ~/.local/bin/
+    ```
+
+    ### Data storage
+
+    By default, sica stores data in `~/.sica/`. Set the `SICA_DATA_DIR` environment variable to use a custom location.
+  footer: |
+    **Full Changelog**: https://github.com/mohitraku/sica/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: sica
+    repository:
+      owner: mohitraku
+      name: homebrew-tap
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    directory: Formula
+    homepage: https://github.com/mohitraku/sica
+    description: "A terminal-based habit tracker"
+    license: MIT
+    install: |
+      bin.install "sica"
