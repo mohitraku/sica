@@ -55,7 +55,6 @@ snapshot:
 changelog:
   sort: asc
   use: git
-  format: "- {{ .SHA }} {{ .Message }}"
   abbrev: 7
   groups:
     - title: Features
