@@ -54,7 +54,8 @@ snapshot:
 
 changelog:
   sort: asc
-  use: github
+  use: git
+  format: "- {{ .ShortCommit }} {{ .Message }}"
   groups:
     - title: Features
       regexp: "^.*feat[(\\w)]*:+.*$"
