@@ -1,6 +1,7 @@
 package views
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,23 +67,14 @@ func (hf *HabitForm) StartNew() {
 func (hf *HabitForm) StartEdit(id, name, freq, qty string, target int) {
 	hf.Name.SetValue(name)
 	hf.Name.Focus()
-	hf.FreqIdx = indexOf(freqOptions, freq)
-	hf.QtyIdx = indexOf(qtyOptions, qty)
+	hf.FreqIdx = slices.Index(freqOptions, freq)
+	hf.QtyIdx = slices.Index(qtyOptions, qty)
 	hf.TargetValue = target
 	hf.FocusField = 0
 	hf.EditHabitID = id
 	hf.EditName = name
 	hf.Error = ""
 	hf.Mode = FormEdit
-}
-
-func indexOf(slice []string, val string) int {
-	for i, s := range slice {
-		if s == val {
-			return i
-		}
-	}
-	return 0
 }
 
 func (hf *HabitForm) Cancel() {
@@ -165,18 +157,6 @@ func (hf *HabitForm) cycleField(delta int) {
 	}
 }
 
-func (hf *HabitForm) Focus() string {
-	switch hf.FocusField {
-	case 1:
-		return freqOptions[hf.FreqIdx]
-	case 2:
-		return qtyOptions[hf.QtyIdx]
-	case 3:
-		return strconv.Itoa(hf.TargetValue)
-	}
-	return ""
-}
-
 func (hf *HabitForm) Render(st Styles) string {
 	switch hf.Mode {
 	case FormNew, FormEdit:
@@ -199,15 +179,15 @@ func (hf *HabitForm) renderFullForm(st Styles) string {
 		active  bool
 	}{
 		{"Name", hf.Name.View(), hf.FocusField == 0},
-		{"Frequency", hf.freqDisplay(st), hf.FocusField == 1},
-		{"Type", hf.qtyDisplay(st), hf.FocusField == 2},
+		{"Frequency", hf.fieldDisplay(st, 1, hf.FreqVal()), hf.FocusField == 1},
+		{"Type", hf.fieldDisplay(st, 2, hf.QtyVal()), hf.FocusField == 2},
 	}
 	if hf.QtyIdx == 1 { // "count"
 		fields = append(fields, struct {
 			label   string
 			content string
 			active  bool
-		}{"Target", hf.targetDisplay(st), hf.FocusField == 3})
+		}{"Target", hf.fieldDisplay(st, 3, strconv.Itoa(hf.TargetValue)), hf.FocusField == 3})
 	}
 
 	var sb strings.Builder
@@ -232,34 +212,14 @@ func (hf *HabitForm) renderFullForm(st Styles) string {
 	return st.ListItem.Render(sb.String())
 }
 
-func (hf *HabitForm) freqDisplay(st Styles) string {
-	active := hf.FocusField == 1
+func (hf *HabitForm) fieldDisplay(st Styles, focusField int, value string) string {
+	active := hf.FocusField == focusField
 	s := st.HabitName
 	if !active {
 		s = st.FreqLabel
 	}
 	arrow := st.HelpHint.Render(" ←→ ")
-	return arrow + s.Render(hf.FreqVal())
-}
-
-func (hf *HabitForm) qtyDisplay(st Styles) string {
-	active := hf.FocusField == 2
-	s := st.HabitName
-	if !active {
-		s = st.FreqLabel
-	}
-	arrow := st.HelpHint.Render(" ←→ ")
-	return arrow + s.Render(hf.QtyVal())
-}
-
-func (hf *HabitForm) targetDisplay(st Styles) string {
-	active := hf.FocusField == 3
-	s := st.HabitName
-	if !active {
-		s = st.FreqLabel
-	}
-	arrow := st.HelpHint.Render(" ←→ ")
-	return arrow + s.Render(strconv.Itoa(hf.TargetValue))
+	return arrow + s.Render(value)
 }
 
 func (hf *HabitForm) FreqVal() string  { return freqOptions[hf.FreqIdx] }

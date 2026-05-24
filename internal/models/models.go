@@ -20,18 +20,6 @@ type HabitEntry struct {
 	LoggedAt string `json:"logged_at"`
 }
 
-type Config struct {
-	DataDir        string `json:"data_dir"`
-	FirstDayOfWeek string `json:"first_day_of_week"`
-}
-
-func DefaultConfig() Config {
-	return Config{
-		DataDir:        "~/.sica",
-		FirstDayOfWeek: "monday",
-	}
-}
-
 func NowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }

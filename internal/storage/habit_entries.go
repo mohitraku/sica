@@ -59,27 +59,3 @@ func (s *EntryStore) GetForHabit(habitID string) ([]models.HabitEntry, error) {
 	}
 	return entries, rows.Err()
 }
-
-func (s *EntryStore) GetForDateRange(habitID, from, to string) ([]models.HabitEntry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, habit_id, date, value, logged_at
-		 FROM habit_entries
-		 WHERE habit_id = ? AND date >= ? AND date <= ?
-		 ORDER BY date ASC`,
-		habitID, from, to,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var entries []models.HabitEntry
-	for rows.Next() {
-		var e models.HabitEntry
-		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.LoggedAt); err != nil {
-			return nil, err
-		}
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}

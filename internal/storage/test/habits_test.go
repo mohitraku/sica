@@ -44,6 +44,7 @@ func migrateTest(db *sql.DB) error {
 		logged_at TEXT NOT NULL,
 		UNIQUE(habit_id, date)
 	);
+	CREATE INDEX IF NOT EXISTS idx_habit_entries_date ON habit_entries(date);
 	`
 	_, err := db.Exec(schema)
 	return err

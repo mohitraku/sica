@@ -119,25 +119,6 @@ func TestGetForHabitEmpty(t *testing.T) {
 	}
 }
 
-func TestGetForDateRange(t *testing.T) {
-	eStore, _ := setupEntryTest(t)
-
-	eStore.SetValue("habit1", "2026-05-15", 1)
-	eStore.SetValue("habit1", "2026-05-18", 1)
-	eStore.SetValue("habit1", "2026-05-20", 1)
-
-	entries, err := eStore.GetForDateRange("habit1", "2026-05-16", "2026-05-19")
-	if err != nil {
-		t.Fatalf("GetForDateRange failed: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry in range, got %d", len(entries))
-	}
-	if entries[0].Date != "2026-05-18" {
-		t.Errorf("expected date '2026-05-18', got %s", entries[0].Date)
-	}
-}
-
 func TestEntryCascadeDelete(t *testing.T) {
 	eStore, hStore := setupEntryTest(t)
 

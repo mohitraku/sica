@@ -83,7 +83,7 @@ func sortedKeys(m map[string]bool) []string {
 // periodKey converts a date string to a period identifier based on frequency.
 // daily: "2026-05-18", weekly: "2026-W20", monthly: "2026-05"
 func periodKey(dateStr, frequency string) string {
-	t, err := time.Parse("2006-01-02", dateStr)
+	t, err := time.Parse(models.DateLayout, dateStr)
 	if err != nil {
 		return dateStr
 	}

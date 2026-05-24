@@ -4,13 +4,12 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
 func Open(dataDir string) (*sql.DB, error) {
-	dir := expandTilde(dataDir)
+	dir := dataDir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -63,14 +62,4 @@ func migrate(db *sql.DB) error {
 	`
 	_, err := db.Exec(schema)
 	return err
-}
-
-func expandTilde(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, path[2:])
-		}
-	}
-	return path
 }

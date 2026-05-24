@@ -8,9 +8,8 @@ type Styles struct {
 	HelpHint lipgloss.Style
 	AppName  lipgloss.Style
 
-	ListItem       lipgloss.Style
-	ListItemSel    lipgloss.Style
-	StatusDone     lipgloss.Style
+	ListItem      lipgloss.Style
+	StatusDone    lipgloss.Style
 	StatusPartial  lipgloss.Style
 	StatusUndone   lipgloss.Style
 	HabitName      lipgloss.Style
@@ -52,8 +51,7 @@ func BuildStyles(dark bool) Styles {
 
 		AppName: base.Copy().Bold(true).Foreground(highlight),
 
-		ListItem:    base.Copy(),
-		ListItemSel: base.Copy(),
+		ListItem: base.Copy(),
 
 		StatusDone:    base.Copy().Foreground(highlight),
 		StatusPartial: base.Copy().Foreground(warn),

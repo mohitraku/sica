@@ -39,11 +39,7 @@ func (hl *HabitList) SetData(habits []models.Habit, entries map[string][]models.
 	if len(habits) == 0 {
 		hl.Index = 0
 	}
-	hl.clampScroll()
-}
-
-func (hl *HabitList) SelectedIndex() int {
-	return hl.Index
+	hl.ClampScroll()
 }
 
 func (hl *HabitList) SelectedHabit() *models.Habit {
@@ -61,7 +57,7 @@ func (hl *HabitList) MoveUp() {
 	if hl.Index < 0 {
 		hl.Index = len(hl.Habits) - 1
 	}
-	hl.clampScroll()
+	hl.ClampScroll()
 }
 
 func (hl *HabitList) MoveDown() {
@@ -72,7 +68,7 @@ func (hl *HabitList) MoveDown() {
 	if hl.Index >= len(hl.Habits) {
 		hl.Index = 0
 	}
-	hl.clampScroll()
+	hl.ClampScroll()
 }
 
 func (hl *HabitList) ClampScroll() {
@@ -82,10 +78,6 @@ func (hl *HabitList) ClampScroll() {
 	if hl.MaxVisible > 0 && hl.Index >= hl.Offset+hl.MaxVisible {
 		hl.Offset = hl.Index - hl.MaxVisible + 1
 	}
-}
-
-func (hl *HabitList) clampScroll() {
-	hl.ClampScroll()
 }
 
 // Click converts a mouse y position (relative to the list's first line) to a
