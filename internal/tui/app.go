@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
+	"github.com/mohitraku/sica/internal/config"
 	"github.com/mohitraku/sica/internal/models"
 	"github.com/mohitraku/sica/internal/steward"
 	"github.com/mohitraku/sica/internal/storage"
@@ -24,28 +25,34 @@ type Model struct {
 	keys    keyMap
 	hl      views.HabitList
 	helpBar views.HelpBar
-	form    views.HabitForm
-	confirm views.Confirm
+	form     views.HabitForm
+	confirm  views.Confirm
+	settings views.Settings
 
-	showHelp     bool
-	selectedDate string
+	showHelp      bool
+	selectedDate  string
+	dataDir       string
+	dataDirSource string
 
 	width  int
 	height int
 	ready  bool
 }
 
-func New(hStore *storage.HabitStore, eStore *storage.EntryStore) *Model {
+func New(hStore *storage.HabitStore, eStore *storage.EntryStore, dataDir, dataDirSource string) *Model {
 	return &Model{
-		hStore:       hStore,
-		eStore:       eStore,
-		styles:       views.BuildStyles(false),
-		keys:         keys,
-		hl:           views.NewHabitList(),
-		helpBar:      views.NewHelpBar(),
-		form:         views.NewHabitForm(),
-		confirm:      views.NewConfirm(),
-		selectedDate: models.Today(),
+		hStore:        hStore,
+		eStore:        eStore,
+		styles:        views.BuildStyles(false),
+		keys:          keys,
+		hl:            views.NewHabitList(),
+		helpBar:       views.NewHelpBar(),
+		form:          views.NewHabitForm(),
+		confirm:       views.NewConfirm(),
+		settings:      views.NewSettings(),
+		selectedDate:  models.Today(),
+		dataDir:       dataDir,
+		dataDirSource: dataDirSource,
 	}
 }
 
@@ -94,6 +101,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "?" || msg.String() == "esc" {
 				m.showHelp = false
 			}
+		}
+		return m, nil
+	}
+
+	// Settings overlay intercepts keys
+	if m.settings.Active {
+		saved, newPath := m.settings.Update(msg)
+		if saved {
+			config.Save(config.Config{DataDir: newPath})
 		}
 		return m, nil
 	}
@@ -211,6 +227,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = !m.showHelp
 		return m, nil
 
+	case key.Matches(msg, m.keys.Settings):
+		configuredPath := ""
+		cfg, _ := config.Load()
+		configuredPath = cfg.DataDir
+		m.settings.Show(m.dataDir, m.dataDirSource, configuredPath)
+		return m, nil
+
 	case key.Matches(msg, m.keys.Up):
 		m.hl.MoveUp()
 		return m, nil
@@ -308,6 +331,14 @@ func (m *Model) View() tea.View {
 		return v
 	}
 
+	// Settings overlay
+	if m.settings.Active {
+		settingsView := m.settings.Render(m.styles)
+		v := tea.NewView(settingsView)
+		v.AltScreen = true
+		return v
+	}
+
 	var sb strings.Builder
 
 	// Title bar
@@ -320,7 +351,7 @@ func (m *Model) View() tea.View {
 		titleLeft = m.styles.AppName.Render("Sica ") +
 			arrow + m.styles.DateLabel.Render(m.selectedDate)
 	}
-	titleRight := m.styles.HelpHint.Render("↑↓ nav  ? help  q quit")
+	titleRight := m.styles.HelpHint.Render("S settings  ? help  q quit")
 	titleGap := m.width - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight) - 4
 	if titleGap < 1 {
 		titleGap = 1
@@ -360,7 +391,7 @@ func (m *Model) View() tea.View {
 		helpBindings = []key.Binding{
 			m.keys.New, m.keys.Edit,
 			m.keys.Increment, m.keys.Decrement,
-			m.keys.Delete, m.keys.Help,
+			m.keys.Delete, m.keys.Settings, m.keys.Help,
 			m.keys.PrevDay, m.keys.NextDay, m.keys.Today,
 		}
 	}

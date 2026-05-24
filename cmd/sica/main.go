@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/mohitraku/sica/internal/config"
 	"github.com/mohitraku/sica/internal/storage"
 	"github.com/mohitraku/sica/internal/tui"
 )
@@ -22,7 +23,7 @@ func main() {
 		return
 	}
 
-	dataDir := sicaDir()
+	dataDir, source := sicaDir()
 
 	db, err := storage.Open(dataDir)
 	if err != nil {
@@ -34,7 +35,7 @@ func main() {
 	hStore := storage.NewHabitStore(db)
 	eStore := storage.NewEntryStore(db)
 
-	model := tui.New(hStore, eStore)
+	model := tui.New(hStore, eStore, dataDir, source)
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -42,13 +43,17 @@ func main() {
 	}
 }
 
-func sicaDir() string {
+func sicaDir() (dir, source string) {
 	if dir := os.Getenv("SICA_DATA_DIR"); dir != "" {
-		return dir
+		return dir, "env"
+	}
+	cfg, _ := config.Load()
+	if cfg.DataDir != "" {
+		return cfg.DataDir, "config"
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".sica"
+		return ".sica", "default"
 	}
-	return home + "/.sica"
+	return home + "/.sica", "default"
 }

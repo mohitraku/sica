@@ -17,6 +17,7 @@ type keyMap struct {
 	PrevDay   key.Binding
 	NextDay   key.Binding
 	Today     key.Binding
+	Settings  key.Binding
 }
 
 var keys = keyMap{
@@ -68,6 +69,10 @@ var keys = keyMap{
 		key.WithKeys("t"),
 		key.WithHelp("t", "today"),
 	),
+	Settings: key.NewBinding(
+		key.WithKeys("S"),
+		key.WithHelp("S", "settings"),
+	),
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -75,6 +80,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down},
 		{k.Increment, k.Decrement, k.New, k.Edit, k.Delete},
 		{k.PrevDay, k.NextDay, k.Today},
-		{k.Help, k.Quit},
+		{k.Help, k.Settings, k.Quit},
 	}
 }
