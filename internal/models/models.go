@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-type Habit struct {
+type Routine struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Frequency    string `json:"frequency"`
@@ -12,12 +12,12 @@ type Habit struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
-type HabitEntry struct {
-	ID       int64  `json:"id"`
-	HabitID  string `json:"habit_id"`
-	Date     string `json:"date"`
-	Value    int    `json:"value"`
-	LoggedAt string `json:"logged_at"`
+type RoutineEntry struct {
+	ID        int64  `json:"id"`
+	RoutineID string `json:"routine_id"`
+	Date      string `json:"date"`
+	Value     int    `json:"value"`
+	LoggedAt  string `json:"logged_at"`
 }
 
 func NowUTC() string {

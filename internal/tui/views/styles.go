@@ -12,8 +12,8 @@ type Styles struct {
 	StatusDone    lipgloss.Style
 	StatusPartial  lipgloss.Style
 	StatusUndone   lipgloss.Style
-	HabitName      lipgloss.Style
-	HabitNameDone  lipgloss.Style
+	RoutineName      lipgloss.Style
+	RoutineNameDone  lipgloss.Style
 	Progress       lipgloss.Style
 	StreakCurrent  lipgloss.Style
 	StreakLongest  lipgloss.Style
@@ -57,8 +57,8 @@ func BuildStyles(dark bool) Styles {
 		StatusPartial: base.Copy().Foreground(warn),
 		StatusUndone:  base.Copy().Foreground(dim),
 
-		HabitName:     base.Copy().Foreground(text),
-		HabitNameDone: base.Copy().Bold(true).Foreground(highlight),
+		RoutineName:     base.Copy().Foreground(text),
+		RoutineNameDone: base.Copy().Bold(true).Foreground(highlight),
 
 		Progress: base.Copy().Foreground(dim),
 

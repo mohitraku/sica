@@ -18,14 +18,14 @@ import (
 )
 
 type Model struct {
-	hStore *storage.HabitStore
+	rStore *storage.RoutineStore
 	eStore *storage.EntryStore
 
 	styles  views.Styles
 	keys    keyMap
-	hl      views.HabitList
+	rl      views.RoutineList
 	helpBar views.HelpBar
-	form     views.HabitForm
+	form     views.RoutineForm
 	confirm  views.Confirm
 	settings views.Settings
 
@@ -39,15 +39,15 @@ type Model struct {
 	ready  bool
 }
 
-func New(hStore *storage.HabitStore, eStore *storage.EntryStore, dataDir, dataDirSource string) *Model {
+func New(rStore *storage.RoutineStore, eStore *storage.EntryStore, dataDir, dataDirSource string) *Model {
 	return &Model{
-		hStore:        hStore,
+		rStore:        rStore,
 		eStore:        eStore,
 		styles:        views.BuildStyles(false),
 		keys:          keys,
-		hl:            views.NewHabitList(),
+		rl:            views.NewRoutineList(),
 		helpBar:       views.NewHelpBar(),
-		form:          views.NewHabitForm(),
+		form:          views.NewRoutineForm(),
 		confirm:       views.NewConfirm(),
 		settings:      views.NewSettings(),
 		selectedDate:  models.Today(),
@@ -61,18 +61,18 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) loadData() {
-	habits, _ := m.hStore.List()
+	routines, _ := m.rStore.List()
 
-	entries := make(map[string][]models.HabitEntry)
+	entries := make(map[string][]models.RoutineEntry)
 	dateVals := make(map[string]int)
 
-	for _, h := range habits {
-		e, _ := m.eStore.GetForHabit(h.ID)
-		entries[h.ID] = e
-		dateVals[h.ID], _ = m.eStore.GetValue(h.ID, m.selectedDate)
+	for _, r := range routines {
+		e, _ := m.eStore.GetForRoutine(r.ID)
+		entries[r.ID] = e
+		dateVals[r.ID], _ = m.eStore.GetValue(r.ID, m.selectedDate)
 	}
 
-	m.hl.SetData(habits, entries, dateVals, m.selectedDate)
+	m.rl.SetData(routines, entries, dateVals, m.selectedDate)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -80,9 +80,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.confirm.Active {
 		confirmed, _ := m.confirm.Update(msg)
 		if confirmed {
-			h := m.hl.SelectedHabit()
+			h := m.rl.SelectedRoutine()
 			if h != nil {
-				m.hStore.Delete(h.ID)
+				m.rStore.Delete(h.ID)
 				m.loadData()
 			}
 		}
@@ -122,7 +122,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.hl.SetSize(m.height)
+		m.rl.SetSize(m.height)
 		if !m.ready {
 			m.loadData()
 			m.ready = true
@@ -147,14 +147,14 @@ func (m *Model) handleFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			// New/Edit form submission
-			name, freq, qty, target := m.form.GetHabitFields()
+			name, freq, qty, target := m.form.GetRoutineFields()
 			if err := steward.ValidateName(name); err != nil {
 				m.form.SetError(err.Error())
 				return m, nil
 			}
 			now := models.NowUTC()
 			if m.form.Mode == views.FormNew {
-				h := &models.Habit{
+				h := &models.Routine{
 					ID:           newID(),
 					Name:         name,
 					Frequency:    freq,
@@ -163,18 +163,18 @@ func (m *Model) handleFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 					CreatedAt:    now,
 					UpdatedAt:    now,
 				}
-				steward.NormalizeHabit(h)
-				m.hStore.Create(h)
+				steward.NormalizeRoutine(h)
+				m.rStore.Create(h)
 			} else {
-				existing, _ := m.hStore.GetByID(m.form.EditHabitID)
+				existing, _ := m.rStore.GetByID(m.form.EditRoutineID)
 				if existing != nil {
 					existing.Name = name
 					existing.Frequency = freq
 					existing.QuantityType = qty
 					existing.TargetValue = target
 					existing.UpdatedAt = now
-					steward.NormalizeHabit(existing)
-					m.hStore.Update(existing)
+					steward.NormalizeRoutine(existing)
+					m.rStore.Update(existing)
 				}
 			}
 			m.form.Cancel()
@@ -192,27 +192,27 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		idx, onIcon := m.hl.Click(msg.Y-1, msg.X)
+		idx, onIcon := m.rl.Click(msg.Y-1, msg.X)
 		if idx < 0 {
 			return m, nil
 		}
-		if onIcon && idx < len(m.hl.Habits) {
-			h := m.hl.Habits[idx]
+		if onIcon && idx < len(m.rl.Routines) {
+			h := m.rl.Routines[idx]
 			cur, _ := m.eStore.GetValue(h.ID, m.selectedDate)
 			next := steward.IncrementValue(cur, h.TargetValue)
 			m.eStore.SetValue(h.ID, m.selectedDate, next)
 			m.loadData()
 		} else {
-			m.hl.Index = idx
-			m.hl.ClampScroll()
+			m.rl.Index = idx
+			m.rl.ClampScroll()
 		}
 
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelUp:
-			m.hl.MoveUp()
+			m.rl.MoveUp()
 		case tea.MouseWheelDown:
-			m.hl.MoveDown()
+			m.rl.MoveDown()
 		}
 	}
 	return m, nil
@@ -235,15 +235,15 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Up):
-		m.hl.MoveUp()
+		m.rl.MoveUp()
 		return m, nil
 
 	case key.Matches(msg, m.keys.Down):
-		m.hl.MoveDown()
+		m.rl.MoveDown()
 		return m, nil
 
 	case key.Matches(msg, m.keys.Increment):
-		h := m.hl.SelectedHabit()
+		h := m.rl.SelectedRoutine()
 		if h == nil {
 			return m, nil
 		}
@@ -254,7 +254,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Decrement):
-		h := m.hl.SelectedHabit()
+		h := m.rl.SelectedRoutine()
 		if h == nil {
 			return m, nil
 		}
@@ -269,7 +269,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Edit):
-		h := m.hl.SelectedHabit()
+		h := m.rl.SelectedRoutine()
 		if h == nil {
 			return m, nil
 		}
@@ -277,7 +277,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Delete):
-		h := m.hl.SelectedHabit()
+		h := m.rl.SelectedRoutine()
 		if h == nil {
 			return m, nil
 		}
@@ -364,8 +364,8 @@ func (m *Model) View() tea.View {
 		)))
 	sb.WriteByte('\n')
 
-	// Habit list or empty state
-	sb.WriteString(m.hl.Render(m.styles))
+	// Routine list or empty state
+	sb.WriteString(m.rl.Render(m.styles))
 
 	// Form when active
 	if m.form.Active() {
@@ -374,7 +374,7 @@ func (m *Model) View() tea.View {
 	}
 
 	// Scroll hint when list overflows
-	if len(m.hl.Habits) > m.hl.MaxVisible {
+	if len(m.rl.Routines) > m.rl.MaxVisible {
 		sb.WriteByte('\n')
 		sb.WriteString(m.styles.HelpHint.Render("  … more below"))
 	}

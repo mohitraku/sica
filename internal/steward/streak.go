@@ -8,19 +8,19 @@ import (
 	"github.com/mohitraku/sica/internal/models"
 )
 
-func CurrentStreak(entries []models.HabitEntry, habit models.Habit, today string) int {
+func CurrentStreak(entries []models.RoutineEntry, r models.Routine, today string) int {
 	if len(entries) == 0 {
 		return 0
 	}
-	return countBackward(entries, habit, today)
+	return countBackward(entries, r, today)
 }
 
-func LongestStreak(entries []models.HabitEntry, habit models.Habit) int {
+func LongestStreak(entries []models.RoutineEntry, r models.Routine) int {
 	if len(entries) == 0 {
 		return 0
 	}
 
-	periods := completedPeriods(entries, habit)
+	periods := completedPeriods(entries, r)
 	if len(periods) == 0 {
 		return 0
 	}
@@ -30,7 +30,7 @@ func LongestStreak(entries []models.HabitEntry, habit models.Habit) int {
 	longest := 0
 	current := 1
 	for i := 1; i < len(periodList); i++ {
-		if isConsecutive(periodList[i-1], periodList[i], habit.Frequency) {
+		if isConsecutive(periodList[i-1], periodList[i], r.Frequency) {
 			current++
 		} else {
 			if current > longest {
@@ -45,27 +45,27 @@ func LongestStreak(entries []models.HabitEntry, habit models.Habit) int {
 	return longest
 }
 
-func countBackward(entries []models.HabitEntry, habit models.Habit, today string) int {
-	periods := completedPeriods(entries, habit)
-	cur := periodKey(today, habit.Frequency)
+func countBackward(entries []models.RoutineEntry, r models.Routine, today string) int {
+	periods := completedPeriods(entries, r)
+	cur := periodKey(today, r.Frequency)
 
 	if !periods[cur] {
-		cur = prevPeriod(cur, habit.Frequency)
+		cur = prevPeriod(cur, r.Frequency)
 	}
 
 	streak := 0
 	for cur != "" && periods[cur] {
 		streak++
-		cur = prevPeriod(cur, habit.Frequency)
+		cur = prevPeriod(cur, r.Frequency)
 	}
 	return streak
 }
 
-func completedPeriods(entries []models.HabitEntry, habit models.Habit) map[string]bool {
+func completedPeriods(entries []models.RoutineEntry, r models.Routine) map[string]bool {
 	periods := make(map[string]bool)
 	for _, e := range entries {
-		if IsDone(e.Value, habit.TargetValue) {
-			periods[periodKey(e.Date, habit.Frequency)] = true
+		if IsDone(e.Value, r.TargetValue) {
+			periods[periodKey(e.Date, r.Frequency)] = true
 		}
 	}
 	return periods

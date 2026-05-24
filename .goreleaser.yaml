@@ -67,7 +67,7 @@ release:
   header: |
     ## sica {{ .Version }}
 
-    A terminal-based habit tracker.
+    A terminal-based routine tracker.
 
     ### Installation
 

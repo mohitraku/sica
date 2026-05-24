@@ -10,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func setupEntryTest(t *testing.T) (*storage.EntryStore, *storage.HabitStore) {
+func setupEntryTest(t *testing.T) (*storage.EntryStore, *storage.RoutineStore) {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -25,34 +25,34 @@ func setupEntryTest(t *testing.T) (*storage.EntryStore, *storage.HabitStore) {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
-	hStore := storage.NewHabitStore(db)
+	rStore := storage.NewRoutineStore(db)
 	eStore := storage.NewEntryStore(db)
 
 	now := models.NowUTC()
-	h := &models.Habit{
-		ID:           "habit1",
-		Name:         "Test Habit",
+	r := &models.Routine{
+		ID:           "routine1",
+		Name:         "Test Routine",
 		Frequency:    "daily",
 		TargetValue:  1,
 		QuantityType: "binary",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if err := hStore.Create(h); err != nil {
-		t.Fatalf("Create habit failed: %v", err)
+	if err := rStore.Create(r); err != nil {
+		t.Fatalf("Create routine failed: %v", err)
 	}
 
-	return eStore, hStore
+	return eStore, rStore
 }
 
 func TestSetAndGetValue(t *testing.T) {
 	eStore, _ := setupEntryTest(t)
 
-	if err := eStore.SetValue("habit1", "2026-05-18", 1); err != nil {
+	if err := eStore.SetValue("routine1", "2026-05-18", 1); err != nil {
 		t.Fatalf("SetValue failed: %v", err)
 	}
 
-	val, err := eStore.GetValue("habit1", "2026-05-18")
+	val, err := eStore.GetValue("routine1", "2026-05-18")
 	if err != nil {
 		t.Fatalf("GetValue failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestSetAndGetValue(t *testing.T) {
 func TestGetValueNoEntry(t *testing.T) {
 	eStore, _ := setupEntryTest(t)
 
-	val, err := eStore.GetValue("habit1", "2026-05-18")
+	val, err := eStore.GetValue("routine1", "2026-05-18")
 	if err != nil {
 		t.Fatalf("GetValue failed: %v", err)
 	}
@@ -76,28 +76,28 @@ func TestGetValueNoEntry(t *testing.T) {
 func TestSetValueUpsert(t *testing.T) {
 	eStore, _ := setupEntryTest(t)
 
-	if err := eStore.SetValue("habit1", "2026-05-18", 3); err != nil {
+	if err := eStore.SetValue("routine1", "2026-05-18", 3); err != nil {
 		t.Fatalf("first SetValue failed: %v", err)
 	}
-	if err := eStore.SetValue("habit1", "2026-05-18", 7); err != nil {
+	if err := eStore.SetValue("routine1", "2026-05-18", 7); err != nil {
 		t.Fatalf("second SetValue failed: %v", err)
 	}
 
-	val, _ := eStore.GetValue("habit1", "2026-05-18")
+	val, _ := eStore.GetValue("routine1", "2026-05-18")
 	if val != 7 {
 		t.Errorf("expected updated value 7, got %d", val)
 	}
 }
 
-func TestGetForHabit(t *testing.T) {
+func TestGetForRoutine(t *testing.T) {
 	eStore, _ := setupEntryTest(t)
 
-	eStore.SetValue("habit1", "2026-05-18", 1)
-	eStore.SetValue("habit1", "2026-05-19", 0)
+	eStore.SetValue("routine1", "2026-05-18", 1)
+	eStore.SetValue("routine1", "2026-05-19", 0)
 
-	entries, err := eStore.GetForHabit("habit1")
+	entries, err := eStore.GetForRoutine("routine1")
 	if err != nil {
-		t.Fatalf("GetForHabit failed: %v", err)
+		t.Fatalf("GetForRoutine failed: %v", err)
 	}
 	if len(entries) != 2 {
 		t.Errorf("expected 2 entries, got %d", len(entries))
@@ -107,12 +107,12 @@ func TestGetForHabit(t *testing.T) {
 	}
 }
 
-func TestGetForHabitEmpty(t *testing.T) {
+func TestGetForRoutineEmpty(t *testing.T) {
 	eStore, _ := setupEntryTest(t)
 
-	entries, err := eStore.GetForHabit("habit1")
+	entries, err := eStore.GetForRoutine("routine1")
 	if err != nil {
-		t.Fatalf("GetForHabit failed: %v", err)
+		t.Fatalf("GetForRoutine failed: %v", err)
 	}
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries, got %d", len(entries))
@@ -120,13 +120,13 @@ func TestGetForHabitEmpty(t *testing.T) {
 }
 
 func TestEntryCascadeDelete(t *testing.T) {
-	eStore, hStore := setupEntryTest(t)
+	eStore, rStore := setupEntryTest(t)
 
-	eStore.SetValue("habit1", "2026-05-18", 1)
-	hStore.Delete("habit1")
+	eStore.SetValue("routine1", "2026-05-18", 1)
+	rStore.Delete("routine1")
 
-	entries, _ := eStore.GetForHabit("habit1")
+	entries, _ := eStore.GetForRoutine("routine1")
 	if len(entries) != 0 {
-		t.Errorf("expected 0 entries after habit delete, got %d", len(entries))
+		t.Errorf("expected 0 entries after routine delete, got %d", len(entries))
 	}
 }

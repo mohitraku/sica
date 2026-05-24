@@ -14,23 +14,23 @@ func NewEntryStore(db *sql.DB) *EntryStore {
 	return &EntryStore{db: db}
 }
 
-func (s *EntryStore) SetValue(habitID, date string, value int) error {
+func (s *EntryStore) SetValue(routineID, date string, value int) error {
 	_, err := s.db.Exec(
-		`INSERT INTO habit_entries (habit_id, date, value, logged_at)
+		`INSERT INTO routine_entries (routine_id, date, value, logged_at)
 		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(habit_id, date) DO UPDATE SET
+		 ON CONFLICT(routine_id, date) DO UPDATE SET
 		     value = excluded.value,
 		     logged_at = excluded.logged_at`,
-		habitID, date, value, models.NowUTC(),
+		routineID, date, value, models.NowUTC(),
 	)
 	return err
 }
 
-func (s *EntryStore) GetValue(habitID, date string) (int, error) {
+func (s *EntryStore) GetValue(routineID, date string) (int, error) {
 	var value int
 	err := s.db.QueryRow(
-		`SELECT value FROM habit_entries WHERE habit_id = ? AND date = ?`,
-		habitID, date,
+		`SELECT value FROM routine_entries WHERE routine_id = ? AND date = ?`,
+		routineID, date,
 	).Scan(&value)
 	if err == sql.ErrNoRows {
 		return 0, nil
@@ -38,21 +38,21 @@ func (s *EntryStore) GetValue(habitID, date string) (int, error) {
 	return value, err
 }
 
-func (s *EntryStore) GetForHabit(habitID string) ([]models.HabitEntry, error) {
+func (s *EntryStore) GetForRoutine(routineID string) ([]models.RoutineEntry, error) {
 	rows, err := s.db.Query(
-		`SELECT id, habit_id, date, value, logged_at
-		 FROM habit_entries WHERE habit_id = ? ORDER BY date ASC`,
-		habitID,
+		`SELECT id, routine_id, date, value, logged_at
+		 FROM routine_entries WHERE routine_id = ? ORDER BY date ASC`,
+		routineID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var entries []models.HabitEntry
+	var entries []models.RoutineEntry
 	for rows.Next() {
-		var e models.HabitEntry
-		if err := rows.Scan(&e.ID, &e.HabitID, &e.Date, &e.Value, &e.LoggedAt); err != nil {
+		var e models.RoutineEntry
+		if err := rows.Scan(&e.ID, &e.RoutineID, &e.Date, &e.Value, &e.LoggedAt); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)

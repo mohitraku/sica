@@ -98,7 +98,7 @@ func (s *Settings) Render(st Styles) string {
 		sb.WriteString(st.StatusDone.Render("  " + s.savedMsg))
 	} else {
 		sb.WriteString(st.StatusDone.Render("▸ ") + st.FreqLabel.Render("New path: "))
-		sb.WriteString(st.HabitName.Render(s.path.View()))
+		sb.WriteString(st.RoutineName.Render(s.path.View()))
 	}
 
 	sb.WriteString("\n\n")

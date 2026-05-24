@@ -27,7 +27,7 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func migrateTest(db *sql.DB) error {
 	schema := `
-	CREATE TABLE IF NOT EXISTS habits (
+	CREATE TABLE IF NOT EXISTS routines (
 		id            TEXT NOT NULL PRIMARY KEY,
 		name          TEXT NOT NULL,
 		frequency     TEXT NOT NULL DEFAULT 'daily',
@@ -36,23 +36,23 @@ func migrateTest(db *sql.DB) error {
 		created_at    TEXT NOT NULL,
 		updated_at    TEXT NOT NULL
 	);
-	CREATE TABLE IF NOT EXISTS habit_entries (
+	CREATE TABLE IF NOT EXISTS routine_entries (
 		id        INTEGER PRIMARY KEY AUTOINCREMENT,
-		habit_id  TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+		routine_id  TEXT NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
 		date      TEXT NOT NULL,
 		value     INTEGER NOT NULL DEFAULT 0,
 		logged_at TEXT NOT NULL,
-		UNIQUE(habit_id, date)
+		UNIQUE(routine_id, date)
 	);
-	CREATE INDEX IF NOT EXISTS idx_habit_entries_date ON habit_entries(date);
+	CREATE INDEX IF NOT EXISTS idx_routine_entries_date ON routine_entries(date);
 	`
 	_, err := db.Exec(schema)
 	return err
 }
 
-func sampleHabit(id, name string) *models.Habit {
+func sampleRoutine(id, name string) *models.Routine {
 	now := models.NowUTC()
-	return &models.Habit{
+	return &models.Routine{
 		ID:           id,
 		Name:         name,
 		Frequency:    "daily",
@@ -63,13 +63,13 @@ func sampleHabit(id, name string) *models.Habit {
 	}
 }
 
-func TestHabitCreate(t *testing.T) {
+func TestRoutineCreate(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	h := sampleHabit("a1b2c3d4e5f6a7b8", "Drink water")
-	if err := store.Create(h); err != nil {
+	r := sampleRoutine("a1b2c3d4e5f6a7b8", "Drink water")
+	if err := store.Create(r); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
@@ -78,80 +78,80 @@ func TestHabitCreate(t *testing.T) {
 		t.Fatalf("GetByID failed: %v", err)
 	}
 	if got == nil {
-		t.Fatal("GetByID returned nil for existing habit")
+		t.Fatal("GetByID returned nil for existing routine")
 	}
 	if got.Name != "Drink water" {
 		t.Errorf("expected name 'Drink water', got %q", got.Name)
 	}
 }
 
-func TestHabitGetByIDNotFound(t *testing.T) {
+func TestRoutineGetByIDNotFound(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
 	got, err := store.GetByID("nonexistent")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}
 	if got != nil {
-		t.Error("expected nil for nonexistent habit")
+		t.Error("expected nil for nonexistent routine")
 	}
 }
 
-func TestHabitList(t *testing.T) {
+func TestRoutineList(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	if err := store.Create(sampleHabit("id1", "First")); err != nil {
+	if err := store.Create(sampleRoutine("id1", "First")); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	if err := store.Create(sampleHabit("id2", "Second")); err != nil {
+	if err := store.Create(sampleRoutine("id2", "Second")); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	habits, err := store.List()
+	routines, err := store.List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(habits) != 2 {
-		t.Errorf("expected 2 habits, got %d", len(habits))
+	if len(routines) != 2 {
+		t.Errorf("expected 2 routines, got %d", len(routines))
 	}
 	// Most recent first
-	if habits[0].Name != "Second" {
-		t.Errorf("expected first habit to be 'Second', got %q", habits[0].Name)
+	if routines[0].Name != "Second" {
+		t.Errorf("expected first routine to be 'Second', got %q", routines[0].Name)
 	}
 }
 
-func TestHabitListEmpty(t *testing.T) {
+func TestRoutineListEmpty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	habits, err := store.List()
+	routines, err := store.List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(habits) != 0 {
-		t.Errorf("expected 0 habits, got %d", len(habits))
+	if len(routines) != 0 {
+		t.Errorf("expected 0 routines, got %d", len(routines))
 	}
 }
 
-func TestHabitUpdate(t *testing.T) {
+func TestRoutineUpdate(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	h := sampleHabit("id1", "Original")
-	if err := store.Create(h); err != nil {
+	r := sampleRoutine("id1", "Original")
+	if err := store.Create(r); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	h.Name = "Updated"
-	h.Frequency = "weekly"
-	h.UpdatedAt = models.NowUTC()
-	if err := store.Update(h); err != nil {
+	r.Name = "Updated"
+	r.Frequency = "weekly"
+	r.UpdatedAt = models.NowUTC()
+	if err := store.Update(r); err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
 
@@ -164,24 +164,24 @@ func TestHabitUpdate(t *testing.T) {
 	}
 }
 
-func TestHabitUpdateNonexistent(t *testing.T) {
+func TestRoutineUpdateNonexistent(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	h := sampleHabit("nope", "Ghost")
-	err := store.Update(h)
+	r := sampleRoutine("nope", "Ghost")
+	err := store.Update(r)
 	if err == nil {
-		t.Error("expected error updating nonexistent habit")
+		t.Error("expected error updating nonexistent routine")
 	}
 }
 
-func TestHabitDelete(t *testing.T) {
+func TestRoutineDelete(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
-	if err := store.Create(sampleHabit("id1", "ToDelete")); err != nil {
+	if err := store.Create(sampleRoutine("id1", "ToDelete")); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 	if err := store.Delete("id1"); err != nil {
@@ -194,13 +194,13 @@ func TestHabitDelete(t *testing.T) {
 	}
 }
 
-func TestHabitDeleteNonexistent(t *testing.T) {
+func TestRoutineDeleteNonexistent(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	store := storage.NewHabitStore(db)
+	store := storage.NewRoutineStore(db)
 
 	err := store.Delete("nope")
 	if err == nil {
-		t.Error("expected error deleting nonexistent habit")
+		t.Error("expected error deleting nonexistent routine")
 	}
 }

@@ -6,64 +6,64 @@ import (
 	"github.com/mohitraku/sica/internal/models"
 )
 
-type HabitStore struct {
+type RoutineStore struct {
 	db *sql.DB
 }
 
-func NewHabitStore(db *sql.DB) *HabitStore {
-	return &HabitStore{db: db}
+func NewRoutineStore(db *sql.DB) *RoutineStore {
+	return &RoutineStore{db: db}
 }
 
-func (s *HabitStore) Create(h *models.Habit) error {
+func (s *RoutineStore) Create(r *models.Routine) error {
 	_, err := s.db.Exec(
-		`INSERT INTO habits (id, name, frequency, target_value, quantity_type, created_at, updated_at)
+		`INSERT INTO routines (id, name, frequency, target_value, quantity_type, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		h.ID, h.Name, h.Frequency, h.TargetValue, h.QuantityType, h.CreatedAt, h.UpdatedAt,
+		r.ID, r.Name, r.Frequency, r.TargetValue, r.QuantityType, r.CreatedAt, r.UpdatedAt,
 	)
 	return err
 }
 
-func (s *HabitStore) GetByID(id string) (*models.Habit, error) {
-	h := &models.Habit{}
+func (s *RoutineStore) GetByID(id string) (*models.Routine, error) {
+	r := &models.Routine{}
 	err := s.db.QueryRow(
 		`SELECT id, name, frequency, target_value, quantity_type, created_at, updated_at
-		 FROM habits WHERE id = ?`, id,
-	).Scan(&h.ID, &h.Name, &h.Frequency, &h.TargetValue, &h.QuantityType, &h.CreatedAt, &h.UpdatedAt)
+		 FROM routines WHERE id = ?`, id,
+	).Scan(&r.ID, &r.Name, &r.Frequency, &r.TargetValue, &r.QuantityType, &r.CreatedAt, &r.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return h, nil
+	return r, nil
 }
 
-func (s *HabitStore) List() ([]models.Habit, error) {
+func (s *RoutineStore) List() ([]models.Routine, error) {
 	rows, err := s.db.Query(
 		`SELECT id, name, frequency, target_value, quantity_type, created_at, updated_at
-		 FROM habits ORDER BY created_at DESC`,
+		 FROM routines ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var habits []models.Habit
+	var routines []models.Routine
 	for rows.Next() {
-		var h models.Habit
-		if err := rows.Scan(&h.ID, &h.Name, &h.Frequency, &h.TargetValue, &h.QuantityType, &h.CreatedAt, &h.UpdatedAt); err != nil {
+		var r models.Routine
+		if err := rows.Scan(&r.ID, &r.Name, &r.Frequency, &r.TargetValue, &r.QuantityType, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
-		habits = append(habits, h)
+		routines = append(routines, r)
 	}
-	return habits, rows.Err()
+	return routines, rows.Err()
 }
 
-func (s *HabitStore) Update(h *models.Habit) error {
+func (s *RoutineStore) Update(r *models.Routine) error {
 	result, err := s.db.Exec(
-		`UPDATE habits SET name = ?, frequency = ?, target_value = ?, quantity_type = ?, updated_at = ?
+		`UPDATE routines SET name = ?, frequency = ?, target_value = ?, quantity_type = ?, updated_at = ?
 		 WHERE id = ?`,
-		h.Name, h.Frequency, h.TargetValue, h.QuantityType, h.UpdatedAt, h.ID,
+		r.Name, r.Frequency, r.TargetValue, r.QuantityType, r.UpdatedAt, r.ID,
 	)
 	if err != nil {
 		return err
@@ -75,8 +75,8 @@ func (s *HabitStore) Update(h *models.Habit) error {
 	return nil
 }
 
-func (s *HabitStore) Delete(id string) error {
-	result, err := s.db.Exec(`DELETE FROM habits WHERE id = ?`, id)
+func (s *RoutineStore) Delete(id string) error {
+	result, err := s.db.Exec(`DELETE FROM routines WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}

@@ -39,7 +39,7 @@ func Open(dataDir string) (*sql.DB, error) {
 
 func migrate(db *sql.DB) error {
 	schema := `
-	CREATE TABLE IF NOT EXISTS habits (
+	CREATE TABLE IF NOT EXISTS routines (
 		id            TEXT NOT NULL PRIMARY KEY,
 		name          TEXT NOT NULL,
 		frequency     TEXT NOT NULL DEFAULT 'daily',
@@ -49,16 +49,16 @@ func migrate(db *sql.DB) error {
 		updated_at    TEXT NOT NULL
 	);
 
-	CREATE TABLE IF NOT EXISTS habit_entries (
-		id        INTEGER PRIMARY KEY AUTOINCREMENT,
-		habit_id  TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
-		date      TEXT NOT NULL,
-		value     INTEGER NOT NULL DEFAULT 0,
-		logged_at TEXT NOT NULL,
-		UNIQUE(habit_id, date)
+	CREATE TABLE IF NOT EXISTS routine_entries (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		routine_id TEXT NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+		date       TEXT NOT NULL,
+		value      INTEGER NOT NULL DEFAULT 0,
+		logged_at  TEXT NOT NULL,
+		UNIQUE(routine_id, date)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_habit_entries_date ON habit_entries(date);
+	CREATE INDEX IF NOT EXISTS idx_routine_entries_date ON routine_entries(date);
 	`
 	_, err := db.Exec(schema)
 	return err

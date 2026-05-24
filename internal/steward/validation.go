@@ -29,17 +29,17 @@ func ValidateQuantityType(q string) bool {
 	return validQuantityTypes[q]
 }
 
-func NormalizeHabit(h *models.Habit) {
-	if !ValidateFrequency(h.Frequency) {
-		h.Frequency = "daily"
+func NormalizeRoutine(r *models.Routine) {
+	if !ValidateFrequency(r.Frequency) {
+		r.Frequency = "daily"
 	}
-	if !ValidateQuantityType(h.QuantityType) {
-		h.QuantityType = "binary"
+	if !ValidateQuantityType(r.QuantityType) {
+		r.QuantityType = "binary"
 	}
-	if h.QuantityType == "binary" {
-		h.TargetValue = 1
+	if r.QuantityType == "binary" {
+		r.TargetValue = 1
 	}
-	if h.TargetValue < 1 {
-		h.TargetValue = 1
+	if r.TargetValue < 1 {
+		r.TargetValue = 1
 	}
 }

@@ -32,10 +32,10 @@ func main() {
 	}
 	defer db.Close()
 
-	hStore := storage.NewHabitStore(db)
+	rStore := storage.NewRoutineStore(db)
 	eStore := storage.NewEntryStore(db)
 
-	model := tui.New(hStore, eStore, dataDir, source)
+	model := tui.New(rStore, eStore, dataDir, source)
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

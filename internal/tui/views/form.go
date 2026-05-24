@@ -21,7 +21,7 @@ const (
 var freqOptions = []string{"daily", "weekly", "monthly"}
 var qtyOptions = []string{"binary", "count"}
 
-type HabitForm struct {
+type RoutineForm struct {
 	Mode FormMode
 
 	// For create/edit
@@ -30,64 +30,64 @@ type HabitForm struct {
 	QtyIdx       int
 	TargetValue  int
 	FocusField   int // 0=name, 1=freq, 2=qty, 3=target
-	EditHabitID  string
+	EditRoutineID  string
 	EditName     string
 	Error        string
 
 }
 
-func NewHabitForm() HabitForm {
+func NewRoutineForm() RoutineForm {
 	ti := textinput.New()
-	ti.Placeholder = "Habit name"
+	ti.Placeholder = "Routine name"
 	ti.CharLimit = 128
 	ti.SetWidth(30)
 
-	return HabitForm{
+	return RoutineForm{
 		Name: ti,
 	}
 }
 
-func (hf *HabitForm) Active() bool {
+func (hf *RoutineForm) Active() bool {
 	return hf.Mode != FormNone
 }
 
-func (hf *HabitForm) StartNew() {
+func (hf *RoutineForm) StartNew() {
 	hf.Name.Reset()
-	hf.Name.Placeholder = "Habit name"
+	hf.Name.Placeholder = "Routine name"
 	hf.Name.Focus()
 	hf.FreqIdx = 0
 	hf.QtyIdx = 0
 	hf.TargetValue = 1
 	hf.FocusField = 0
-	hf.EditHabitID = ""
+	hf.EditRoutineID = ""
 	hf.Error = ""
 	hf.Mode = FormNew
 }
 
-func (hf *HabitForm) StartEdit(id, name, freq, qty string, target int) {
+func (hf *RoutineForm) StartEdit(id, name, freq, qty string, target int) {
 	hf.Name.SetValue(name)
 	hf.Name.Focus()
 	hf.FreqIdx = slices.Index(freqOptions, freq)
 	hf.QtyIdx = slices.Index(qtyOptions, qty)
 	hf.TargetValue = target
 	hf.FocusField = 0
-	hf.EditHabitID = id
+	hf.EditRoutineID = id
 	hf.EditName = name
 	hf.Error = ""
 	hf.Mode = FormEdit
 }
 
-func (hf *HabitForm) Cancel() {
+func (hf *RoutineForm) Cancel() {
 	hf.Mode = FormNone
 	hf.Name.Blur()
 	hf.Error = ""
 }
 
-func (hf *HabitForm) SetError(msg string) {
+func (hf *RoutineForm) SetError(msg string) {
 	hf.Error = msg
 }
 
-func (hf *HabitForm) GetHabitFields() (name, freq, qty string, target int) {
+func (hf *RoutineForm) GetRoutineFields() (name, freq, qty string, target int) {
 	name = strings.TrimSpace(hf.Name.Value())
 	freq = freqOptions[hf.FreqIdx]
 	qty = qtyOptions[hf.QtyIdx]
@@ -95,7 +95,7 @@ func (hf *HabitForm) GetHabitFields() (name, freq, qty string, target int) {
 	return
 }
 
-func (hf *HabitForm) Update(msg tea.Msg) tea.Cmd {
+func (hf *RoutineForm) Update(msg tea.Msg) tea.Cmd {
 	if hf.Mode == FormNone {
 		return nil
 	}
@@ -126,14 +126,14 @@ func (hf *HabitForm) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func (hf *HabitForm) numFields() int {
+func (hf *RoutineForm) numFields() int {
 	if hf.QtyIdx == 1 { // "count"
 		return 4
 	}
 	return 3
 }
 
-func (hf *HabitForm) cycleField(delta int) {
+func (hf *RoutineForm) cycleField(delta int) {
 	switch hf.FocusField {
 	case 1:
 		hf.FreqIdx = (hf.FreqIdx + delta + len(freqOptions)) % len(freqOptions)
@@ -157,7 +157,7 @@ func (hf *HabitForm) cycleField(delta int) {
 	}
 }
 
-func (hf *HabitForm) Render(st Styles) string {
+func (hf *RoutineForm) Render(st Styles) string {
 	switch hf.Mode {
 	case FormNew, FormEdit:
 		return hf.renderFullForm(st)
@@ -165,10 +165,10 @@ func (hf *HabitForm) Render(st Styles) string {
 	return ""
 }
 
-func (hf *HabitForm) renderFullForm(st Styles) string {
+func (hf *RoutineForm) renderFullForm(st Styles) string {
 	var title string
 	if hf.Mode == FormNew {
-		title = st.AppName.Render("New Habit")
+		title = st.AppName.Render("New Routine")
 	} else {
 		title = st.AppName.Render("Edit: " + hf.EditName)
 	}
@@ -212,9 +212,9 @@ func (hf *HabitForm) renderFullForm(st Styles) string {
 	return st.ListItem.Render(sb.String())
 }
 
-func (hf *HabitForm) fieldDisplay(st Styles, focusField int, value string) string {
+func (hf *RoutineForm) fieldDisplay(st Styles, focusField int, value string) string {
 	active := hf.FocusField == focusField
-	s := st.HabitName
+	s := st.RoutineName
 	if !active {
 		s = st.FreqLabel
 	}
@@ -222,5 +222,5 @@ func (hf *HabitForm) fieldDisplay(st Styles, focusField int, value string) strin
 	return arrow + s.Render(value)
 }
 
-func (hf *HabitForm) FreqVal() string  { return freqOptions[hf.FreqIdx] }
-func (hf *HabitForm) QtyVal() string   { return qtyOptions[hf.QtyIdx] }
+func (hf *RoutineForm) FreqVal() string  { return freqOptions[hf.FreqIdx] }
+func (hf *RoutineForm) QtyVal() string   { return qtyOptions[hf.QtyIdx] }
