@@ -166,34 +166,3 @@ func TestTaskDeleteNonexistent(t *testing.T) {
 	}
 }
 
-func TestTaskDeleteCompleted(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	store := storage.NewTaskStore(db)
-
-	if err := store.Create(sampleTask("id1", "Done task", true)); err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if err := store.Create(sampleTask("id2", "Also done", true)); err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if err := store.Create(sampleTask("id3", "Not done", false)); err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-
-	count, err := store.DeleteCompleted()
-	if err != nil {
-		t.Fatalf("DeleteCompleted failed: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("expected 2 deleted, got %d", count)
-	}
-
-	tasks, _ := store.List()
-	if len(tasks) != 1 {
-		t.Errorf("expected 1 remaining task, got %d", len(tasks))
-	}
-	if tasks[0].Title != "Not done" {
-		t.Errorf("expected 'Not done' to remain, got %q", tasks[0].Title)
-	}
-}

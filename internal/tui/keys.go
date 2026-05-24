@@ -20,7 +20,6 @@ type keyMap struct {
 	Settings   key.Binding
 	SwitchMode key.Binding
 	Toggle     key.Binding
-	ClearDone  key.Binding
 }
 
 var keys = keyMap{
@@ -81,12 +80,8 @@ var keys = keyMap{
 		key.WithHelp("tab", "tasks"),
 	),
 	Toggle: key.NewBinding(
-		key.WithKeys(" "),
+		key.WithKeys("space"),
 		key.WithHelp("space", "toggle"),
-	),
-	ClearDone: key.NewBinding(
-		key.WithKeys("c"),
-		key.WithHelp("c", "clear done"),
 	),
 }
 
@@ -94,7 +89,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
 		{k.Increment, k.Decrement, k.New, k.Edit, k.Delete},
-		{k.SwitchMode, k.Toggle, k.ClearDone},
+		{k.SwitchMode, k.Toggle},
 		{k.PrevDay, k.NextDay, k.Today},
 		{k.Help, k.Settings, k.Quit},
 	}

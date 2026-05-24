@@ -462,14 +462,6 @@ func (m *Model) handleTaskKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.tStore.Update(t)
 		m.loadData()
 		return m, nil
-
-	case key.Matches(msg, m.keys.ClearDone):
-		m.confirmAction = func() {
-			m.tStore.DeleteCompleted()
-			m.loadData()
-		}
-		m.confirm.Show("Clear all completed tasks?")
-		return m, nil
 	}
 	return m, nil
 }
@@ -566,7 +558,7 @@ func (m *Model) View() tea.View {
 	} else if m.mode == ModeTasks {
 		helpBindings = []key.Binding{
 			m.keys.New, m.keys.Edit,
-			m.keys.Toggle, m.keys.ClearDone,
+			m.keys.Toggle,
 			m.keys.Delete, m.keys.SwitchMode, m.keys.Help,
 		}
 	} else {

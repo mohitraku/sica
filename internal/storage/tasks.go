@@ -87,10 +87,3 @@ func (s *TaskStore) Delete(id string) error {
 	return nil
 }
 
-func (s *TaskStore) DeleteCompleted() (int64, error) {
-	result, err := s.db.Exec(`DELETE FROM tasks WHERE done = 1`)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
