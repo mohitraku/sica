@@ -17,37 +17,52 @@ import (
 	"github.com/mohitraku/sica/internal/tui/views"
 )
 
+type AppMode int
+
+const (
+	ModeRoutines AppMode = iota
+	ModeTasks
+)
+
 type Model struct {
 	rStore *storage.RoutineStore
 	eStore *storage.EntryStore
+	tStore *storage.TaskStore
 
-	styles  views.Styles
-	keys    keyMap
-	rl      views.RoutineList
-	helpBar views.HelpBar
-	form     views.RoutineForm
-	confirm  views.Confirm
-	settings views.Settings
+	styles        views.Styles
+	keys          keyMap
+	rl            views.RoutineList
+	tl            views.TaskList
+	helpBar       views.HelpBar
+	form          views.RoutineForm
+	taskForm      views.TaskForm
+	confirm       views.Confirm
+	confirmAction func()
+	settings      views.Settings
 
 	showHelp      bool
 	selectedDate  string
 	dataDir       string
 	dataDirSource string
+	mode          AppMode
 
 	width  int
 	height int
 	ready  bool
 }
 
-func New(rStore *storage.RoutineStore, eStore *storage.EntryStore, dataDir, dataDirSource string) *Model {
+func New(rStore *storage.RoutineStore, eStore *storage.EntryStore, tStore *storage.TaskStore, dataDir, dataDirSource string) *Model {
 	return &Model{
 		rStore:        rStore,
 		eStore:        eStore,
+		tStore:        tStore,
 		styles:        views.BuildStyles(false),
 		keys:          keys,
 		rl:            views.NewRoutineList(),
+		tl:            views.NewTaskList(),
 		helpBar:       views.NewHelpBar(),
 		form:          views.NewRoutineForm(),
+		taskForm:      views.NewTaskForm(),
 		confirm:       views.NewConfirm(),
 		settings:      views.NewSettings(),
 		selectedDate:  models.Today(),
@@ -73,18 +88,18 @@ func (m *Model) loadData() {
 	}
 
 	m.rl.SetData(routines, entries, dateVals, m.selectedDate)
+
+	tasks, _ := m.tStore.List()
+	m.tl.SetData(tasks)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Confirm dialog intercepts all keys
 	if m.confirm.Active {
 		confirmed, _ := m.confirm.Update(msg)
-		if confirmed {
-			h := m.rl.SelectedRoutine()
-			if h != nil {
-				m.rStore.Delete(h.ID)
-				m.loadData()
-			}
+		if confirmed && m.confirmAction != nil {
+			m.confirmAction()
+			m.confirmAction = nil
 		}
 		return m, nil
 	}
@@ -92,6 +107,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Form intercepts keys
 	if m.form.Active() {
 		return m.handleFormMsg(msg)
+	}
+	if m.taskForm.Active() {
+		return m.handleTaskFormMsg(msg)
 	}
 
 	// Help overlay intercepts keys
@@ -123,6 +141,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.rl.SetSize(m.height)
+		m.tl.SetSize(m.height)
 		if !m.ready {
 			m.loadData()
 			m.ready = true
@@ -186,12 +205,71 @@ func (m *Model) handleFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) handleTaskFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc":
+			m.taskForm.Cancel()
+			return m, nil
+		case "enter":
+			title := m.taskForm.GetTitle()
+			if err := steward.ValidateTaskTitle(title); err != nil {
+				m.taskForm.SetError(err.Error())
+				return m, nil
+			}
+			now := models.NowUTC()
+			if m.taskForm.Mode == views.FormNew {
+				t := &models.Task{
+					ID:        newID(),
+					Title:     title,
+					Done:      false,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}
+				m.tStore.Create(t)
+			} else {
+				existing, _ := m.tStore.GetByID(m.taskForm.EditID)
+				if existing != nil {
+					existing.Title = title
+					existing.UpdatedAt = now
+					m.tStore.Update(existing)
+				}
+			}
+			m.taskForm.Cancel()
+			m.loadData()
+			return m, nil
+		}
+	}
+	cmd := m.taskForm.Update(msg)
+	return m, cmd
+}
+
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
+
+		if m.mode == ModeTasks {
+			idx, onIcon := m.tl.Click(msg.Y-1, msg.X)
+			if idx < 0 {
+				return m, nil
+			}
+			if onIcon && idx < len(m.tl.Tasks) {
+				t := m.tl.Tasks[idx]
+				t.Done = !t.Done
+				t.UpdatedAt = models.NowUTC()
+				m.tStore.Update(&t)
+				m.loadData()
+			} else {
+				m.tl.Index = idx
+				m.tl.ClampScroll()
+			}
+			return m, nil
+		}
+
 		idx, onIcon := m.rl.Click(msg.Y-1, msg.X)
 		if idx < 0 {
 			return m, nil
@@ -210,9 +288,17 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelUp:
-			m.rl.MoveUp()
+			if m.mode == ModeTasks {
+				m.tl.MoveUp()
+			} else {
+				m.rl.MoveUp()
+			}
 		case tea.MouseWheelDown:
-			m.rl.MoveDown()
+			if m.mode == ModeTasks {
+				m.tl.MoveDown()
+			} else {
+				m.rl.MoveDown()
+			}
 		}
 	}
 	return m, nil
@@ -234,6 +320,21 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.settings.Show(m.dataDir, m.dataDirSource, configuredPath)
 		return m, nil
 
+	case key.Matches(msg, m.keys.SwitchMode):
+		if m.mode == ModeRoutines {
+			m.mode = ModeTasks
+		} else {
+			m.mode = ModeRoutines
+		}
+		return m, nil
+	}
+
+	if m.mode == ModeTasks {
+		return m.handleTaskKey(msg)
+	}
+
+	// Routine mode
+	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.rl.MoveUp()
 		return m, nil
@@ -281,6 +382,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if h == nil {
 			return m, nil
 		}
+		m.confirmAction = func() {
+			m.rStore.Delete(h.ID)
+			m.loadData()
+		}
 		m.confirm.Show("Delete \"" + h.Name + "\"?")
 		return m, nil
 
@@ -308,6 +413,62 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.selectedDate = models.Today()
 			m.loadData()
 		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) handleTaskKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.tl.MoveUp()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		m.tl.MoveDown()
+		return m, nil
+
+	case key.Matches(msg, m.keys.New):
+		m.taskForm.StartNew()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Edit):
+		t := m.tl.SelectedTask()
+		if t == nil {
+			return m, nil
+		}
+		m.taskForm.StartEdit(t.ID, t.Title)
+		return m, nil
+
+	case key.Matches(msg, m.keys.Delete):
+		t := m.tl.SelectedTask()
+		if t == nil {
+			return m, nil
+		}
+		m.confirmAction = func() {
+			m.tStore.Delete(t.ID)
+			m.loadData()
+		}
+		m.confirm.Show("Delete \"" + t.Title + "\"?")
+		return m, nil
+
+	case key.Matches(msg, m.keys.Toggle):
+		t := m.tl.SelectedTask()
+		if t == nil {
+			return m, nil
+		}
+		t.Done = !t.Done
+		t.UpdatedAt = models.NowUTC()
+		m.tStore.Update(t)
+		m.loadData()
+		return m, nil
+
+	case key.Matches(msg, m.keys.ClearDone):
+		m.confirmAction = func() {
+			m.tStore.DeleteCompleted()
+			m.loadData()
+		}
+		m.confirm.Show("Clear all completed tasks?")
 		return m, nil
 	}
 	return m, nil
@@ -343,7 +504,10 @@ func (m *Model) View() tea.View {
 
 	// Title bar
 	var titleLeft string
-	if models.IsToday(m.selectedDate) {
+	if m.mode == ModeTasks {
+		titleLeft = m.styles.AppName.Render("Sica ") +
+			m.styles.DateLabel.Render("Tasks")
+	} else if models.IsToday(m.selectedDate) {
 		titleLeft = m.styles.AppName.Render("Sica ") +
 			m.styles.DateLabel.Render(m.selectedDate)
 	} else {
@@ -364,28 +528,46 @@ func (m *Model) View() tea.View {
 		)))
 	sb.WriteByte('\n')
 
-	// Routine list or empty state
-	sb.WriteString(m.rl.Render(m.styles))
+	// Main list
+	if m.mode == ModeTasks {
+		sb.WriteString(m.tl.Render(m.styles))
 
-	// Form when active
-	if m.form.Active() {
-		sb.WriteByte('\n')
-		sb.WriteString(m.form.Render(m.styles))
-	}
+		if m.taskForm.Active() {
+			sb.WriteByte('\n')
+			sb.WriteString(m.taskForm.Render(m.styles))
+		}
 
-	// Scroll hint when list overflows
-	if len(m.rl.Routines) > m.rl.MaxVisible {
-		sb.WriteByte('\n')
-		sb.WriteString(m.styles.HelpHint.Render("  … more below"))
+		if len(m.tl.Tasks) > m.tl.MaxVisible {
+			sb.WriteByte('\n')
+			sb.WriteString(m.styles.HelpHint.Render("  … more below"))
+		}
+	} else {
+		sb.WriteString(m.rl.Render(m.styles))
+
+		if m.form.Active() {
+			sb.WriteByte('\n')
+			sb.WriteString(m.form.Render(m.styles))
+		}
+
+		if len(m.rl.Routines) > m.rl.MaxVisible {
+			sb.WriteByte('\n')
+			sb.WriteString(m.styles.HelpHint.Render("  … more below"))
+		}
 	}
 
 	// Help bar
 	var helpBindings []key.Binding
-	if m.form.Active() {
+	if m.form.Active() || m.taskForm.Active() {
 		helpBindings = []key.Binding{
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+	} else if m.mode == ModeTasks {
+		helpBindings = []key.Binding{
+			m.keys.New, m.keys.Edit,
+			m.keys.Toggle, m.keys.ClearDone,
+			m.keys.Delete, m.keys.SwitchMode, m.keys.Help,
 		}
 	} else {
 		helpBindings = []key.Binding{

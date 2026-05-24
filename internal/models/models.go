@@ -12,6 +12,14 @@ type Routine struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type Task struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Done      bool   `json:"done"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type RoutineEntry struct {
 	ID        int64  `json:"id"`
 	RoutineID string `json:"routine_id"`

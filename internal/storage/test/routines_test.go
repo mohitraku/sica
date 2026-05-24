@@ -45,6 +45,14 @@ func migrateTest(db *sql.DB) error {
 		UNIQUE(routine_id, date)
 	);
 	CREATE INDEX IF NOT EXISTS idx_routine_entries_date ON routine_entries(date);
+
+	CREATE TABLE IF NOT EXISTS tasks (
+		id         TEXT NOT NULL PRIMARY KEY,
+		title      TEXT NOT NULL,
+		done       INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
 	`
 	_, err := db.Exec(schema)
 	return err

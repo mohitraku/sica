@@ -5,19 +5,22 @@ import (
 )
 
 type keyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	Increment key.Binding
-	Decrement key.Binding
-	New       key.Binding
-	Edit      key.Binding
-	Delete    key.Binding
-	Help      key.Binding
-	Quit      key.Binding
-	PrevDay   key.Binding
-	NextDay   key.Binding
-	Today     key.Binding
-	Settings  key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Increment  key.Binding
+	Decrement  key.Binding
+	New        key.Binding
+	Edit       key.Binding
+	Delete     key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	PrevDay    key.Binding
+	NextDay    key.Binding
+	Today      key.Binding
+	Settings   key.Binding
+	SwitchMode key.Binding
+	Toggle     key.Binding
+	ClearDone  key.Binding
 }
 
 var keys = keyMap{
@@ -73,12 +76,25 @@ var keys = keyMap{
 		key.WithKeys("S"),
 		key.WithHelp("S", "settings"),
 	),
+	SwitchMode: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "tasks"),
+	),
+	Toggle: key.NewBinding(
+		key.WithKeys(" "),
+		key.WithHelp("space", "toggle"),
+	),
+	ClearDone: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "clear done"),
+	),
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
 		{k.Increment, k.Decrement, k.New, k.Edit, k.Delete},
+		{k.SwitchMode, k.Toggle, k.ClearDone},
 		{k.PrevDay, k.NextDay, k.Today},
 		{k.Help, k.Settings, k.Quit},
 	}
