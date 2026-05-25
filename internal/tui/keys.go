@@ -20,6 +20,7 @@ type keyMap struct {
 	Settings   key.Binding
 	SwitchMode key.Binding
 	Toggle     key.Binding
+	Bump       key.Binding
 }
 
 var keys = keyMap{
@@ -77,11 +78,15 @@ var keys = keyMap{
 	),
 	SwitchMode: key.NewBinding(
 		key.WithKeys("tab"),
-		key.WithHelp("tab", "tasks"),
+		key.WithHelp("tab", "switch"),
 	),
 	Toggle: key.NewBinding(
 		key.WithKeys("space"),
 		key.WithHelp("space", "toggle"),
+	),
+	Bump: key.NewBinding(
+		key.WithKeys("space"),
+		key.WithHelp("space", "bump"),
 	),
 }
 
@@ -89,7 +94,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
 		{k.Increment, k.Decrement, k.New, k.Edit, k.Delete},
-		{k.SwitchMode, k.Toggle},
+		{k.SwitchMode, k.Toggle, k.Bump},
 		{k.PrevDay, k.NextDay, k.Today},
 		{k.Help, k.Settings, k.Quit},
 	}

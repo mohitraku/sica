@@ -22,20 +22,24 @@ type AppMode int
 const (
 	ModeRoutines AppMode = iota
 	ModeTasks
+	ModePeople
 )
 
 type Model struct {
 	rStore *storage.RoutineStore
 	eStore *storage.EntryStore
 	tStore *storage.TaskStore
+	pStore *storage.PersonStore
 
 	styles        views.Styles
 	keys          keyMap
 	rl            views.RoutineList
 	tl            views.TaskList
+	pl            views.PeopleList
 	helpBar       views.HelpBar
 	form          views.RoutineForm
 	taskForm      views.TaskForm
+	peopleForm    views.PeopleForm
 	confirm       views.Confirm
 	confirmAction func()
 	settings      views.Settings
@@ -51,18 +55,21 @@ type Model struct {
 	ready  bool
 }
 
-func New(rStore *storage.RoutineStore, eStore *storage.EntryStore, tStore *storage.TaskStore, dataDir, dataDirSource string) *Model {
+func New(rStore *storage.RoutineStore, eStore *storage.EntryStore, tStore *storage.TaskStore, pStore *storage.PersonStore, dataDir, dataDirSource string) *Model {
 	return &Model{
 		rStore:        rStore,
 		eStore:        eStore,
 		tStore:        tStore,
+		pStore:        pStore,
 		styles:        views.BuildStyles(false),
 		keys:          keys,
 		rl:            views.NewRoutineList(),
 		tl:            views.NewTaskList(),
+		pl:            views.NewPeopleList(),
 		helpBar:       views.NewHelpBar(),
 		form:          views.NewRoutineForm(),
 		taskForm:      views.NewTaskForm(),
+		peopleForm:    views.NewPeopleForm(),
 		confirm:       views.NewConfirm(),
 		settings:      views.NewSettings(),
 		selectedDate:  models.Today(),
@@ -91,6 +98,13 @@ func (m *Model) loadData() {
 
 	tasks, _ := m.tStore.List()
 	m.tl.SetData(tasks)
+
+	people, _ := m.pStore.List()
+	dates := make(map[string][]models.SignificantDate)
+	for _, p := range people {
+		dates[p.ID], _ = m.pStore.GetSignificantDates(p.ID)
+	}
+	m.pl.SetData(people, dates)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -110,6 +124,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.taskForm.Active() {
 		return m.handleTaskFormMsg(msg)
+	}
+	if m.peopleForm.Active() {
+		return m.handlePeopleFormMsg(msg)
 	}
 
 	// Help overlay intercepts keys
@@ -142,6 +159,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.rl.SetSize(m.height)
 		m.tl.SetSize(m.height)
+		m.pl.SetSize(m.height)
 		if !m.ready {
 			m.loadData()
 			m.ready = true
@@ -165,7 +183,6 @@ func (m *Model) handleFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form.Cancel()
 			return m, nil
 		case "enter":
-			// New/Edit form submission
 			name, freq, qty, target := m.form.GetRoutineFields()
 			if err := steward.ValidateName(name); err != nil {
 				m.form.SetError(err.Error())
@@ -245,6 +262,53 @@ func (m *Model) handleTaskFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) handlePeopleFormMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc":
+			m.peopleForm.Cancel()
+			return m, nil
+		case "enter":
+			name, email, phone := m.peopleForm.GetFields()
+			if err := steward.ValidatePersonName(name); err != nil {
+				m.peopleForm.SetError(err.Error())
+				return m, nil
+			}
+			if err := steward.ValidateEmail(email); err != nil {
+				m.peopleForm.SetError(err.Error())
+				return m, nil
+			}
+			now := models.NowUTC()
+			if m.peopleForm.Mode == views.FormNew {
+				p := &models.Person{
+					ID:        newID(),
+					Name:      name,
+					Email:     email,
+					Phone:     phone,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}
+				m.pStore.Create(p)
+			} else {
+				existing, _ := m.pStore.GetByID(m.peopleForm.EditID)
+				if existing != nil {
+					existing.Name = name
+					existing.Email = email
+					existing.Phone = phone
+					existing.UpdatedAt = now
+					m.pStore.Update(existing)
+				}
+			}
+			m.peopleForm.Cancel()
+			m.loadData()
+			return m, nil
+		}
+	}
+	cmd := m.peopleForm.Update(msg)
+	return m, cmd
+}
+
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
@@ -270,6 +334,24 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.mode == ModePeople {
+			idx, onBump := m.pl.Click(msg.Y-1, msg.X)
+			if idx < 0 {
+				return m, nil
+			}
+			if onBump && idx < len(m.pl.People) {
+				p := m.pl.People[idx]
+				p.LastContacted = models.Today()
+				p.UpdatedAt = models.NowUTC()
+				m.pStore.Update(&p)
+				m.loadData()
+			} else {
+				m.pl.Index = idx
+				m.pl.ClampScroll()
+			}
+			return m, nil
+		}
+
 		idx, onIcon := m.rl.Click(msg.Y-1, msg.X)
 		if idx < 0 {
 			return m, nil
@@ -290,12 +372,16 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case tea.MouseWheelUp:
 			if m.mode == ModeTasks {
 				m.tl.MoveUp()
+			} else if m.mode == ModePeople {
+				m.pl.MoveUp()
 			} else {
 				m.rl.MoveUp()
 			}
 		case tea.MouseWheelDown:
 			if m.mode == ModeTasks {
 				m.tl.MoveDown()
+			} else if m.mode == ModePeople {
+				m.pl.MoveDown()
 			} else {
 				m.rl.MoveDown()
 			}
@@ -321,9 +407,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.SwitchMode):
-		if m.mode == ModeRoutines {
+		switch m.mode {
+		case ModeRoutines:
 			m.mode = ModeTasks
-		} else {
+		case ModeTasks:
+			m.mode = ModePeople
+		case ModePeople:
 			m.mode = ModeRoutines
 		}
 		return m, nil
@@ -331,6 +420,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeTasks {
 		return m.handleTaskKey(msg)
+	}
+	if m.mode == ModePeople {
+		return m.handlePeopleKey(msg)
 	}
 
 	// Routine mode
@@ -466,6 +558,54 @@ func (m *Model) handleTaskKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) handlePeopleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.pl.MoveUp()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		m.pl.MoveDown()
+		return m, nil
+
+	case key.Matches(msg, m.keys.New):
+		m.peopleForm.StartNew()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Edit):
+		p := m.pl.SelectedPerson()
+		if p == nil {
+			return m, nil
+		}
+		m.peopleForm.StartEdit(p.ID, p.Name, p.Email, p.Phone)
+		return m, nil
+
+	case key.Matches(msg, m.keys.Delete):
+		p := m.pl.SelectedPerson()
+		if p == nil {
+			return m, nil
+		}
+		m.confirmAction = func() {
+			m.pStore.Delete(p.ID)
+			m.loadData()
+		}
+		m.confirm.Show("Delete \"" + p.Name + "\"?")
+		return m, nil
+
+	case key.Matches(msg, m.keys.Bump):
+		p := m.pl.SelectedPerson()
+		if p == nil {
+			return m, nil
+		}
+		p.LastContacted = models.Today()
+		p.UpdatedAt = models.NowUTC()
+		m.pStore.Update(p)
+		m.loadData()
+		return m, nil
+	}
+	return m, nil
+}
+
 func (m *Model) View() tea.View {
 	if !m.ready {
 		return tea.NewView("Loading...")
@@ -494,11 +634,18 @@ func (m *Model) View() tea.View {
 
 	var sb strings.Builder
 
+	// Tab bar
+	sb.WriteString(m.renderTabBar())
+	sb.WriteByte('\n')
+
 	// Title bar
 	var titleLeft string
 	if m.mode == ModeTasks {
 		titleLeft = m.styles.AppName.Render("Sica ") +
 			m.styles.DateLabel.Render("Tasks")
+	} else if m.mode == ModePeople {
+		titleLeft = m.styles.AppName.Render("Sica ") +
+			m.styles.DateLabel.Render("People")
 	} else if models.IsToday(m.selectedDate) {
 		titleLeft = m.styles.AppName.Render("Sica ") +
 			m.styles.DateLabel.Render(m.selectedDate)
@@ -533,6 +680,18 @@ func (m *Model) View() tea.View {
 			sb.WriteByte('\n')
 			sb.WriteString(m.styles.HelpHint.Render("  … more below"))
 		}
+	} else if m.mode == ModePeople {
+		sb.WriteString(m.pl.Render(m.styles))
+
+		if m.peopleForm.Active() {
+			sb.WriteByte('\n')
+			sb.WriteString(m.peopleForm.Render(m.styles))
+		}
+
+		if len(m.pl.People) > m.pl.MaxVisible {
+			sb.WriteByte('\n')
+			sb.WriteString(m.styles.HelpHint.Render("  … more below"))
+		}
 	} else {
 		sb.WriteString(m.rl.Render(m.styles))
 
@@ -549,7 +708,7 @@ func (m *Model) View() tea.View {
 
 	// Help bar
 	var helpBindings []key.Binding
-	if m.form.Active() || m.taskForm.Active() {
+	if m.form.Active() || m.taskForm.Active() || m.peopleForm.Active() {
 		helpBindings = []key.Binding{
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
@@ -559,6 +718,12 @@ func (m *Model) View() tea.View {
 		helpBindings = []key.Binding{
 			m.keys.New, m.keys.Edit,
 			m.keys.Toggle,
+			m.keys.Delete, m.keys.SwitchMode, m.keys.Help,
+		}
+	} else if m.mode == ModePeople {
+		helpBindings = []key.Binding{
+			m.keys.New, m.keys.Edit,
+			m.keys.Bump,
 			m.keys.Delete, m.keys.SwitchMode, m.keys.Help,
 		}
 	} else {
@@ -577,6 +742,29 @@ func (m *Model) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+func (m *Model) renderTabBar() string {
+	tabs := []struct {
+		label  string
+		active bool
+	}{
+		{"Routines", m.mode == ModeRoutines},
+		{"Tasks", m.mode == ModeTasks},
+		{"People", m.mode == ModePeople},
+	}
+
+	var parts []string
+	for _, t := range tabs {
+		if t.active {
+			parts = append(parts, m.styles.TabActive.Render(" "+t.label+" "))
+		} else {
+			parts = append(parts, m.styles.TabInactive.Render(" "+t.label+" "))
+		}
+	}
+
+	joined := strings.Join(parts, m.styles.TabSep.Render(" │ "))
+	return m.styles.TabBar.Render(joined)
 }
 
 func (m *Model) helpOverlay() tea.View {

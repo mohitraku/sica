@@ -80,7 +80,7 @@ func (tl *TaskList) Click(y, x int) (index int, onIcon bool) {
 }
 
 func (tl *TaskList) SetSize(height int) {
-	tl.MaxVisible = height - 3
+	tl.MaxVisible = height - 4
 	if tl.MaxVisible < 1 {
 		tl.MaxVisible = 1
 	}

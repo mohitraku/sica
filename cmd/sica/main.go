@@ -35,8 +35,9 @@ func main() {
 	rStore := storage.NewRoutineStore(db)
 	eStore := storage.NewEntryStore(db)
 	tStore := storage.NewTaskStore(db)
+	pStore := storage.NewPersonStore(db)
 
-	model := tui.New(rStore, eStore, tStore, dataDir, source)
+	model := tui.New(rStore, eStore, tStore, pStore, dataDir, source)
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

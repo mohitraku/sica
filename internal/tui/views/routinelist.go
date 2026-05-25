@@ -95,8 +95,8 @@ func (hl *RoutineList) Click(y, x int) (index int, onIcon bool) {
 }
 
 func (hl *RoutineList) SetSize(height int) {
-	// Reserve space for title bar (1), help bar (1), scroll hint (1)
-	hl.MaxVisible = height - 3
+	// Reserve space for tab bar (1), title bar (1), help bar (1), scroll hint (1)
+	hl.MaxVisible = height - 4
 	if hl.MaxVisible < 1 {
 		hl.MaxVisible = 1
 	}

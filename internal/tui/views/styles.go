@@ -20,6 +20,18 @@ type Styles struct {
 	FreqLabel      lipgloss.Style
 	DateLabel      lipgloss.Style
 
+	TabBar      lipgloss.Style
+	TabActive   lipgloss.Style
+	TabInactive lipgloss.Style
+	TabSep      lipgloss.Style
+
+	PersonName      lipgloss.Style
+	PersonDaysNew   lipgloss.Style
+	PersonDaysRecent lipgloss.Style
+	PersonDaysOld   lipgloss.Style
+	PersonDaysStale lipgloss.Style
+	PersonInfoIcon  lipgloss.Style
+
 	Overlay    lipgloss.Style
 	OverlayKey lipgloss.Style
 	OverlayVal lipgloss.Style
@@ -67,6 +79,22 @@ func BuildStyles(dark bool) Styles {
 
 		FreqLabel: base.Copy().Foreground(dim),
 		DateLabel: base.Copy().Foreground(text),
+
+		TabBar: base.Copy().
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			BorderForeground(borderDim).
+			Padding(0, 1),
+
+		TabActive:   base.Copy().Bold(true).Foreground(highlight),
+		TabInactive: base.Copy().Foreground(dim),
+		TabSep:      base.Copy().Foreground(dim),
+
+		PersonName:      base.Copy().Foreground(text),
+		PersonDaysNew:   base.Copy().Foreground(highlight),
+		PersonDaysRecent: base.Copy().Foreground(text),
+		PersonDaysOld:   base.Copy().Foreground(warn),
+		PersonDaysStale: base.Copy().Foreground(dim),
+		PersonInfoIcon:  base.Copy().Foreground(dim),
 
 		Overlay: base.Copy().
 			Border(lipgloss.RoundedBorder()).
