@@ -54,25 +54,6 @@ func migrateTest(db *sql.DB) error {
 		updated_at TEXT NOT NULL
 	);
 
-	CREATE TABLE IF NOT EXISTS people (
-		id             TEXT NOT NULL PRIMARY KEY,
-		name           TEXT NOT NULL,
-		email          TEXT NOT NULL DEFAULT '',
-		phone          TEXT NOT NULL DEFAULT '',
-		last_contacted TEXT NOT NULL DEFAULT '',
-		source         TEXT NOT NULL DEFAULT 'manual',
-		external_id    TEXT NOT NULL DEFAULT '',
-		created_at     TEXT NOT NULL,
-		updated_at     TEXT NOT NULL
-	);
-
-	CREATE TABLE IF NOT EXISTS significant_dates (
-		id        INTEGER PRIMARY KEY AUTOINCREMENT,
-		person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-		label     TEXT NOT NULL,
-		date      TEXT NOT NULL,
-		UNIQUE(person_id, label)
-	);
 	`
 	_, err := db.Exec(schema)
 	return err

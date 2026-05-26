@@ -31,27 +31,24 @@ goreleaser release --clean --skip=publish --skip=validate
 ```
 cmd/sica          Entry point — opens DB, creates stores, runs Bubble Tea loop
 internal/
-  models/         Domain types (Routine, RoutineEntry, Task, Person,
-                  SignificantDate). Zero dependencies.
+  models/         Domain types (Routine, RoutineEntry, Task).
+                  Zero dependencies.
   steward/        Business logic — completion/streak math, validation. No I/O.
   storage/        SQLite CRUD (modernc.org/sqlite, pure Go, no CGO).
-                  RoutineStore + EntryStore + TaskStore + PersonStore,
-                  concrete structs.
+                  RoutineStore + EntryStore + TaskStore, concrete structs.
   tui/
     app.go        Bubble Tea Model — orchestrates storage ↔ views, handles
                   key/mouse dispatch with priority: confirm overlay →
                   form overlay → help → settings → normal mode.
-                  Three modes: ModeRoutines (default), ModeTasks, ModePeople
-                  (Tab cycles through all three). Tab bar rendered above
-                  title bar showing all modes.
-    keys.go       Key bindings (keyMap with 17 bindings)
+                  Two modes: ModeRoutines (default), ModeTasks
+                  (Tab toggles between them). Tab bar rendered above
+                  title bar showing both modes.
+    keys.go       Key bindings (keyMap with 15 bindings)
     views/        Stateless rendering components:
       routinelist.go  Scrollable list with click-to-toggle and streak display
       tasklist.go     Simple checklist with done/undone toggle
-      peoplelist.go   People list with bump indicator and days-since-contact
       form.go         New/edit routine form (mode: FormNew/FormEdit)
       taskform.go     Single-field new/edit task form
-      peopleform.go   Multi-field new/edit person form (name, email, phone)
       confirm.go      Yes/no delete confirmation overlay
       helpbar.go      Bottom bar with active key hints
       styles.go       Light/dark lipgloss styles, rebuilt on BackgroundColorMsg
@@ -60,6 +57,6 @@ internal/
 
 **Data flow:** `cmd` creates stores → passes to `tui.Model` → model reads/writes via stores and passes data to `views` for rendering. Views never access storage directly. `steward` is imported by both `tui` and `views` for display logic (streak counts, completion status, validation).
 
-**SQLite:** WAL mode, FK enabled. Five tables: `routines` (PK id TEXT, name, frequency, target_value, quantity_type, timestamps), `routine_entries` (PK id INTEGER, routine_id FK CASCADE, date, value, logged_at, UNIQUE(routine_id, date)), `tasks` (PK id TEXT, title, done INTEGER, timestamps), `people` (PK id TEXT, name, email, phone, last_contacted, source, external_id, timestamps), and `significant_dates` (PK id INTEGER, person_id FK CASCADE, label, date, UNIQUE(person_id, label)). Schema is idempotent (`CREATE TABLE IF NOT EXISTS`), no versioned migrations.
+**SQLite:** WAL mode, FK enabled. Three tables: `routines` (PK id TEXT, name, frequency, target_value, quantity_type, timestamps), `routine_entries` (PK id INTEGER, routine_id FK CASCADE, date, value, logged_at, UNIQUE(routine_id, date)), `tasks` (PK id TEXT, title, done INTEGER, timestamps). Schema is idempotent (`CREATE TABLE IF NOT EXISTS`), no versioned migrations.
 
 **Data dir:** `SICA_DATA_DIR` env var, falls back to `~/.sica/`.

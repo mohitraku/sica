@@ -20,25 +20,6 @@ type Task struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-type Person struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Email         string `json:"email"`
-	Phone         string `json:"phone"`
-	LastContacted string `json:"last_contacted"`
-	Source        string `json:"source"`
-	ExternalID    string `json:"external_id"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
-}
-
-type SignificantDate struct {
-	ID       int64  `json:"id"`
-	PersonID string `json:"person_id"`
-	Label    string `json:"label"`
-	Date     string `json:"date"`
-}
-
 type RoutineEntry struct {
 	ID        int64  `json:"id"`
 	RoutineID string `json:"routine_id"`
